@@ -28,11 +28,11 @@ import com.newoether.agora.viewmodel.ChatViewModel
  */
 @Composable
 fun SettingsAgentToolsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
-    val todoEnabled by viewModel.settings.todoEnabled.collectAsState()
-    val locationEnabled by viewModel.settings.locationEnabled.collectAsState()
-    val introspectEnabled by viewModel.settings.introspectEnabled.collectAsState()
-    val networkScanEnabled by viewModel.settings.networkScanEnabled.collectAsState()
-    val fileServerEnabled by viewModel.settings.fileServerEnabled.collectAsState()
+    val todoEnabled by viewModel.settings.agentTools.todoEnabled.collectAsState()
+    val locationEnabled by viewModel.settings.agentTools.locationEnabled.collectAsState()
+    val introspectEnabled by viewModel.settings.agentTools.introspectEnabled.collectAsState()
+    val networkScanEnabled by viewModel.settings.agentTools.networkScanEnabled.collectAsState()
+    val fileServerEnabled by viewModel.settings.agentTools.fileServerEnabled.collectAsState()
     val scrollState = rememberScrollState()
     CollapsingSettingsScaffold(
         title = stringResource(R.string.agent_tools_title),
@@ -49,7 +49,7 @@ fun SettingsAgentToolsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                             title = stringResource(R.string.agent_tools_todo),
                             description = stringResource(R.string.agent_tools_todo_desc),
                             checked = todoEnabled,
-                            onCheckedChange = viewModel.settings::setTodoEnabled,
+                            onCheckedChange = viewModel.settings.agentTools::setTodoEnabled,
                         )
                     }
                     add {
@@ -58,7 +58,7 @@ fun SettingsAgentToolsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                             title = stringResource(R.string.agent_tools_location),
                             description = stringResource(R.string.agent_tools_location_desc),
                             checked = locationEnabled,
-                            onCheckedChange = viewModel.settings::setLocationEnabled,
+                            onCheckedChange = viewModel.settings.agentTools::setLocationEnabled,
                         )
                     }
                     add {
@@ -67,7 +67,7 @@ fun SettingsAgentToolsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                             title = stringResource(R.string.agent_tools_introspect),
                             description = stringResource(R.string.agent_tools_introspect_desc),
                             checked = introspectEnabled,
-                            onCheckedChange = viewModel.settings::setIntrospectEnabled,
+                            onCheckedChange = viewModel.settings.agentTools::setIntrospectEnabled,
                         )
                     }
                     add {
@@ -76,7 +76,7 @@ fun SettingsAgentToolsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                             title = stringResource(R.string.agent_tools_network_scan),
                             description = stringResource(R.string.agent_tools_network_scan_desc),
                             checked = networkScanEnabled,
-                            onCheckedChange = viewModel.settings::setNetworkScanEnabled,
+                            onCheckedChange = viewModel.settings.agentTools::setNetworkScanEnabled,
                         )
                     }
                     add {
@@ -85,7 +85,7 @@ fun SettingsAgentToolsPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                             title = stringResource(R.string.agent_tools_file_server),
                             description = stringResource(R.string.agent_tools_file_server_desc),
                             checked = fileServerEnabled,
-                            onCheckedChange = viewModel.settings::setFileServerEnabled,
+                            onCheckedChange = viewModel.settings.agentTools::setFileServerEnabled,
                         )
                     }
                 },

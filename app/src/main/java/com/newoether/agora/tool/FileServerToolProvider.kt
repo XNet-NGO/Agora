@@ -13,13 +13,27 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.io.File
+import java.math.BigInteger
 import java.net.InetAddress
 import java.net.NetworkInterface
 import java.security.MessageDigest
+import java.security.SecureRandom
 import java.util.Collections
+import java.util.Date
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLServerSocket
+import org.bouncycastle.asn1.x500.X500Name
+import org.bouncycastle.asn1.x509.BasicConstraints
+import org.bouncycastle.asn1.x509.ExtendedKeyUsage
+import org.bouncycastle.asn1.x509.Extension
+import org.bouncycastle.asn1.x509.GeneralName
+import org.bouncycastle.asn1.x509.GeneralNames
+import org.bouncycastle.asn1.x509.KeyPurposeId
+import org.bouncycastle.asn1.x509.KeyUsage
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
+import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
+import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 
 /**
  * Built-in HTTP file server, ported from AIOPE's file server. Serves a directory over the local
@@ -267,24 +281,41 @@ internal class SimpleHttpServer(
         return generator.generateKeyPair()
     }
 
+    /**
+     * Builds a self-signed X.509 certificate with BouncyCastle. `sun.security.x509` is not part of
+     * the Android SDK, so this mirrors the WebUI's `WebUiCertificate.kt` approach. The certificate
+     * is trusted by fingerprint, not by a CA, so a short validity is fine.
+     */
     private fun generateSelfSignedCertificate(
         keyPair: java.security.KeyPair,
     ): java.security.cert.X509Certificate {
-        val dn = "CN=Agora File Server, O=Agora, C=US"
         val now = System.currentTimeMillis()
         val validity = 365L * 24 * 60 * 60 * 1000
-        val info = sun.security.x509.X500Name(dn)
-        val certInfo = sun.security.x509.X509CertInfo()
-        certInfo.set(sun.security.x509.X509CertInfo.VERSION, sun.security.x509.CertificateVersion(sun.security.x509.CertificateVersion.V3))
-        certInfo.set(sun.security.x509.X509CertInfo.SERIAL_NUMBER, sun.security.x509.CertificateSerialNumber(java.math.BigInteger.valueOf(now)))
-        certInfo.set(sun.security.x509.X509CertInfo.SUBJECT, info)
-        certInfo.set(sun.security.x509.X509CertInfo.ISSUER, info)
-        certInfo.set(sun.security.x509.X509CertInfo.KEY, sun.security.x509.CertificateX509Key(keyPair.public))
-        certInfo.set(sun.security.x509.X509CertInfo.VALIDITY, sun.security.x509.CertificateValidity(java.util.Date(now), java.util.Date(now + validity)))
-        certInfo.set(sun.security.x509.X509CertInfo.ALGORITHM_ID, sun.security.x509.CertificateAlgorithmId(sun.security.x509.AlgorithmId.get("SHA256withRSA")))
-        val cert = sun.security.x509.X509CertImpl(certInfo)
-        cert.sign(keyPair.private, "SHA256withRSA")
-        return cert
+        val subject = X500Name("CN=Agora File Server, O=Agora, C=US")
+        val names = GeneralNames(
+            arrayOf(
+                GeneralName(GeneralName.dNSName, "localhost"),
+                GeneralName(GeneralName.iPAddress, "127.0.0.1"),
+            ),
+        )
+        val holder = JcaX509v3CertificateBuilder(
+            subject,
+            BigInteger(128, SecureRandom()).abs().add(BigInteger.ONE),
+            Date(now),
+            Date(now + validity),
+            subject,
+            keyPair.public,
+        )
+            .addExtension(Extension.basicConstraints, true, BasicConstraints(false))
+            .addExtension(Extension.keyUsage, true, KeyUsage(KeyUsage.digitalSignature))
+            .addExtension(
+                Extension.extendedKeyUsage,
+                false,
+                ExtendedKeyUsage(KeyPurposeId.id_kp_serverAuth),
+            )
+            .addExtension(Extension.subjectAlternativeName, false, names)
+            .build(JcaContentSignerBuilder("SHA256withRSA").build(keyPair.private))
+        return JcaX509CertificateConverter().getCertificate(holder)
     }
 
     fun stop() {

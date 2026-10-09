@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
  */
 class AgentToolSettings(
     private val settingsManager: SettingsManager,
-    scope: CoroutineScope,
+    private val scope: CoroutineScope,
 ) {
     val todoEnabled: StateFlow<Boolean> = settingsManager.todoEnabled.stateIn(scope, SharingStarted.Eagerly, false)
     val locationEnabled: StateFlow<Boolean> = settingsManager.locationEnabled.stateIn(scope, SharingStarted.Eagerly, false)

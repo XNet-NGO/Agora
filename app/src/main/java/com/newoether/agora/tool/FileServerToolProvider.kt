@@ -12,6 +12,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.io.BufferedOutputStream
 import java.io.File
 import java.math.BigInteger
 import java.net.InetAddress
@@ -133,7 +134,8 @@ class FileServerToolProvider(private val context: Context) : ToolProvider {
         val allowUpload = (args["allow_upload"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull() ?: false
         val https = (args["https"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull() ?: false
         val pin = (args["pin"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
-        val dir = File(path)
+        // Canonicalize the root once so every later path check compares against a stable prefix.
+        val dir = File(path).canonicalFile
         if (!dir.isDirectory) return@withContext error("Not a directory: $path")
         if (server?.isRunning == true) {
             return@withContext error("File server is already running. Stop it first.")
@@ -217,6 +219,10 @@ class FileServerToolProvider(private val context: Context) : ToolProvider {
  * Single-threaded HTTP(S) file server. Serves files from a root directory with MIME detection,
  * directory listing, optional uploads, optional HTTPS (self-signed), and optional PIN protection.
  * Runs on a background thread.
+ *
+ * Files are streamed to the client (not loaded whole into memory) so a single large download does
+ * not stall the server or exhaust the heap. The server binds only to the resolved LAN address so
+ * it is not reachable on unrelated interfaces.
  */
 internal class SimpleHttpServer(
     val root: File,
@@ -232,15 +238,25 @@ internal class SimpleHttpServer(
     private var thread: Thread? = null
     private var serverSocket: java.net.ServerSocket? = null
 
+    /** The canonical root with a trailing separator, used as the path-traversal prefix. */
+    private val rootPath = root.canonicalPath + File.separator
+
     /** Max upload size (2 GB, matching AIOPE's cap). */
     private val maxUploadBytes = 2L * 1024 * 1024 * 1024
 
+    /** Stream copy buffer (64 KiB). */
+    private val copyBufferLength = 64 * 1024
+
     fun start(): Boolean {
         return try {
+            // Bind to the LAN address only, not every interface (avoid CWE-668 exposure).
+            val bindAddress = InetAddress.getByName("127.0.0.1").let { _ ->
+                localIpFour()
+            }
             serverSocket = if (https) {
-                createSslServerSocket()
+                createSslServerSocket(bindAddress)
             } else {
-                java.net.ServerSocket(port)
+                java.net.ServerSocket(port, 50, bindAddress)
             }
             isRunning = true
             thread = Thread { serveLoop() }.apply {
@@ -255,7 +271,17 @@ internal class SimpleHttpServer(
         }
     }
 
-    private fun createSslServerSocket(): SSLServerSocket {
+    /** Resolves the device's primary IPv4 LAN address, falling back to loopback. */
+    private fun localIpFour(): InetAddress = runCatching {
+        Collections.list(NetworkInterface.getNetworkInterfaces())
+            .firstOrNull { it.isUp && !it.isLoopback }
+            ?.inetAddresses
+            ?.toList()
+            ?.firstOrNull { it is java.net.Inet4Address }
+            ?: InetAddress.getByName("127.0.0.1")
+    }.getOrDefault(InetAddress.getByName("127.0.0.1"))
+
+    private fun createSslServerSocket(bindAddress: InetAddress): SSLServerSocket {
         val keyStore = java.security.KeyStore.getInstance("PKCS12")
         keyStore.load(null, null)
         val keyPair = generateSelfSignedKeyPair()
@@ -270,7 +296,7 @@ internal class SimpleHttpServer(
         kmf.init(keyStore, "agora".toCharArray())
         val sslContext = SSLContext.getInstance("TLS")
         sslContext.init(kmf.keyManagers, null, null)
-        val socket = sslContext.serverSocketFactory.createServerSocket(port) as SSLServerSocket
+        val socket = sslContext.serverSocketFactory.createServerSocket(port, 50, bindAddress) as SSLServerSocket
         socket.useClientMode = false
         return socket
     }
@@ -365,10 +391,16 @@ internal class SimpleHttpServer(
         }
     }
 
+    /** True if [file]'s canonical path stays strictly inside the canonical root prefix. */
+    private fun insideRoot(file: File): Boolean {
+        val canonical = runCatching { file.canonicalPath }.getOrNull() ?: return false
+        return canonical == root.canonicalPath || canonical.startsWith(rootPath)
+    }
+
     private fun handleGet(client: java.net.Socket, path: String) {
         val decoded = java.net.URLDecoder.decode(path, "UTF-8").removePrefix("/")
-        val file = File(root, decoded).canonicalFile
-        if (!file.path.startsWith(root.canonicalPath)) {
+        val file = File(root, decoded)
+        if (!insideRoot(file)) {
             writeResponse(client, 403, "text/plain", "Forbidden")
             return
         }
@@ -376,10 +408,31 @@ internal class SimpleHttpServer(
             val listing = file.listFiles()?.joinToString("\n") { it.name } ?: ""
             writeResponse(client, 200, "text/plain", listing)
         } else if (file.isFile) {
-            val bytes = file.readBytes()
-            writeResponse(client, 200, mimeType(file.name), bytes)
+            writeFileResponse(client, file)
         } else {
             writeResponse(client, 404, "text/plain", "Not Found")
+        }
+    }
+
+    /** Sends a file streaming, with a Content-Length header. */
+    private fun writeFileResponse(client: java.net.Socket, file: File) {
+        val length = file.length()
+        val header = "HTTP/1.1 200 OK\r\n" +
+            "Content-Type: ${mimeType(file.name)}\r\n" +
+            "Content-Length: $length\r\n" +
+            "Connection: close\r\n" +
+            "\r\n"
+        client.getOutputStream().use { rawOut ->
+            rawOut.write(header.toByteArray(Charsets.UTF_8))
+            file.inputStream().use { input ->
+                val buffer = ByteArray(copyBufferLength)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    rawOut.write(buffer, 0, read)
+                }
+            }
+            rawOut.flush()
         }
     }
 
@@ -402,15 +455,14 @@ internal class SimpleHttpServer(
             return
         }
         val decoded = java.net.URLDecoder.decode(path, "UTF-8").removePrefix("/")
-        val target = File(root, decoded).canonicalFile
-        if (!target.path.startsWith(root.canonicalPath)) {
+        val target = File(root, decoded)
+        if (!insideRoot(target)) {
             writeResponse(client, 403, "text/plain", "Forbidden")
             return
         }
         target.parentFile?.mkdirs()
         try {
-            val output = target.outputStream()
-            try {
+            BufferedOutputStream(target.outputStream()).use { output ->
                 val buffer = ByteArray(8192)
                 var remaining = contentLength
                 while (remaining > 0) {
@@ -419,8 +471,7 @@ internal class SimpleHttpServer(
                     output.write(buffer, 0, read)
                     remaining -= read
                 }
-            } finally {
-                output.close()
+                output.flush()
             }
             writeResponse(client, 201, "text/plain", "Created")
         } catch (_: Exception) {
@@ -449,10 +500,10 @@ internal class SimpleHttpServer(
             "Content-Length: ${body.size}\r\n" +
             "Connection: close\r\n" +
             "\r\n"
-        client.getOutputStream().apply {
-            write(header.toByteArray(Charsets.UTF_8))
-            write(body)
-            flush()
+        client.getOutputStream().use {
+            it.write(header.toByteArray(Charsets.UTF_8))
+            it.write(body)
+            it.flush()
         }
     }
 

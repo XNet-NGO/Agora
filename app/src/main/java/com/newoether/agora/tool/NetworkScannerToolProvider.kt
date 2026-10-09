@@ -8,6 +8,8 @@ import com.newoether.agora.api.ToolParameters
 import com.newoether.agora.api.ToolProperty
 import com.newoether.agora.viewmodel.GenerationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -102,22 +104,25 @@ class NetworkScannerToolProvider(private val context: Context) : ToolProvider {
                 return@withContext error("Could not determine local subnet")
             }
             val hosts = scanSubnet(subnet, timeoutMs)
+            // Parallelize port scans too; each live host is scanned concurrently.
             val hostDetails = hosts.map { host ->
-                val openPorts = scanPorts(host, ports, portTimeoutMs, grabBanner)
-                buildJsonObject {
-                    put("ip", host)
-                    putJsonArray("ports") {
-                        openPorts.forEach { (port, banner) ->
-                            add(
-                                buildJsonObject {
-                                    put("port", port)
-                                    banner?.let { put("banner", it) }
-                                },
-                            )
+                async {
+                    val openPorts = scanPorts(host, ports, portTimeoutMs, grabBanner)
+                    buildJsonObject {
+                        put("ip", host)
+                        putJsonArray("ports") {
+                            openPorts.forEach { (port, banner) ->
+                                add(
+                                    buildJsonObject {
+                                        put("port", port)
+                                        banner?.let { put("banner", it) }
+                                    },
+                                )
+                            }
                         }
                     }
                 }
-            }
+            }.awaitAll()
             buildJsonObject {
                 put("type", "network_scan")
                 put("local_ip", localIp)
@@ -159,17 +164,18 @@ class NetworkScannerToolProvider(private val context: Context) : ToolProvider {
         return "${parts[0]}.${parts[1]}.${parts[2]}."
     }
 
-    private fun scanSubnet(subnet: String, timeoutMs: Int): List<String> {
-        val hosts = mutableListOf<String>()
-        for (i in 1..254) {
-            val ip = "$subnet$i"
-            runCatching {
-                val reachable = InetAddress.getByName(ip).isReachable(timeoutMs)
-                if (reachable) hosts.add(ip)
-            }
+    /** Probes all 254 host addresses concurrently, returning the live ones. */
+    private suspend fun scanSubnet(subnet: String, timeoutMs: Int): List<String> =
+        withContext(Dispatchers.IO) {
+            (1..254).map { i ->
+                async {
+                    val ip = "$subnet$i"
+                    runCatching {
+                        if (InetAddress.getByName(ip).isReachable(timeoutMs)) ip else null
+                    }.getOrNull()
+                }
+            }.awaitAll().filterNotNull()
         }
-        return hosts
-    }
 
     /** Returns a list of (port, banner) pairs for open ports on [host]. */
     private fun scanPorts(

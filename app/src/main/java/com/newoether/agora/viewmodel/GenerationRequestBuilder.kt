@@ -591,7 +591,13 @@ class GenerationRequestBuilder(
             ),
             transcriptionModelId = resolveTranscriptionModelId(transcriptionModel),
             transcriptionApiKey = resolveTranscriptionApiKey(transcriptionModel),
-            transcriptionBaseUrl = resolveTranscriptionBaseUrl(transcriptionModel)
+            transcriptionBaseUrl = resolveTranscriptionBaseUrl(transcriptionModel),
+            // ── Ported AIOPE tools (see port-aiope-tools branch) ─────────────
+            todoEnabled = settings.todoEnabled.value,
+            locationEnabled = settings.locationEnabled.value,
+            introspectEnabled = settings.introspectEnabled.value,
+            networkScanEnabled = settings.networkScanEnabled.value,
+            fileServerEnabled = settings.fileServerEnabled.value,
         )
         return Pair(config, genCtx)
     }

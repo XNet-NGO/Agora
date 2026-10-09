@@ -378,6 +378,7 @@ internal fun SettingsDestination(
         "skills" -> SettingsSkillsPage(viewModel, onBack)
         "datacontrol" -> SettingsDataControlPage(viewModel, onBack)
         "appearance" -> SettingsAppearancePage(viewModel, onBack)
+        "agenttools" -> SettingsAgentToolsPage(viewModel, onBack)
         "developer" -> SettingsDeveloperPage(viewModel, onBack, onDisabled = onBack)
         "about" -> SettingsAboutPage(viewModel, onBack)
         else -> SettingsProviderPage(viewModel, onBack)

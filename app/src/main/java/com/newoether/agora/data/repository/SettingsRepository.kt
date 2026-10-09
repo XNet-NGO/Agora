@@ -607,22 +607,19 @@ class SettingsRepository(
         settingsManager.saveProviderBaseUrl(provider, url)
     }
     fun setTitleGenerationEnabled(enabled: Boolean) = scope.launch { settingsManager.saveTitleGenerationEnabled(enabled) }
-    fun setTitleGenerationNotificationsEnabled(enabled: Boolean) =
-        scope.launch { settingsManager.saveTitleGenerationNotificationsEnabled(enabled) }
+    fun setTitleGenerationNotificationsEnabled(enabled: Boolean) = scope.launch { settingsManager.saveTitleGenerationNotificationsEnabled(enabled) }
     fun setContextCompactEnabled(enabled: Boolean) = scope.launch { settingsManager.saveContextCompactEnabled(enabled) }
     fun setContextCompactModel(model: String?) = scope.launch { settingsManager.saveContextCompactModel(model) }
     fun setContextCompactPrompt(prompt: String) = scope.launch { settingsManager.saveContextCompactPrompt(prompt) }
     fun setContextCompactRetainCount(count: Int) = scope.launch { settingsManager.saveContextCompactRetainCount(count) }
-    fun setContextCompactPreserveSystemPrompt(enabled: Boolean) =
-        scope.launch { settingsManager.saveContextCompactPreserveSystemPrompt(enabled) }
+    fun setContextCompactPreserveSystemPrompt(enabled: Boolean) = scope.launch { settingsManager.saveContextCompactPreserveSystemPrompt(enabled) }
     fun setContextCompactThresholdPercent(percent: Int) = scope.launch {
         settingsManager.saveContextCompactThresholdPercent(percent)
     }
 
     fun setTitleGenerationModel(model: String?) = scope.launch { settingsManager.saveTitleGenerationModel(model) }
     fun setTitleGenerationPrompt(prompt: String) = scope.launch { settingsManager.saveTitleGenerationPrompt(prompt) }
-    fun setImageTranscriptionEnabled(enabled: Boolean) =
-        scope.launch { settingsManager.saveImageTranscriptionEnabled(enabled) }
+    fun setImageTranscriptionEnabled(enabled: Boolean) = scope.launch { settingsManager.saveImageTranscriptionEnabled(enabled) }
     fun setImageTranscriptionModel(model: String?) = scope.launch { settingsManager.saveImageTranscriptionModel(model) }
     fun setImageTranscriptionBatchSize(size: Int) = scope.launch { settingsManager.saveImageTranscriptionBatchSize(size) }
     fun setImageTranscriptionPrompt(prompt: String) = scope.launch { settingsManager.saveImageTranscriptionPrompt(prompt) }
@@ -633,8 +630,7 @@ class SettingsRepository(
     fun setAccessSkillsModify(enabled: Boolean) = scope.launch { settingsManager.saveAccessSkillsModify(enabled) }
     fun setRagSearchEnabled(enabled: Boolean) = scope.launch { settingsManager.saveRagSearchEnabled(enabled) }
     fun setAutoCacheEnabled(enabled: Boolean) = scope.launch { settingsManager.saveAutoCacheEnabled(enabled) }
-    fun setShowUncachedNotification(enabled: Boolean) =
-        scope.launch { settingsManager.saveShowUncachedNotification(enabled) }
+    fun setShowUncachedNotification(enabled: Boolean) = scope.launch { settingsManager.saveShowUncachedNotification(enabled) }
     fun setAutoUpdateCheck(enabled: Boolean) = scope.launch { settingsManager.saveAutoUpdateCheck(enabled) }
     fun setLastUpdateCheckTime(time: Long) = scope.launch { settingsManager.saveLastUpdateCheckTime(time) }
     fun setModelSearchMethod(method: String) = scope.launch { settingsManager.saveModelSearchMethod(method) }
@@ -649,15 +645,12 @@ class SettingsRepository(
     fun setImageGenModel(model: String?) = scope.launch { settingsManager.saveImageGenModel(model) }
     fun setImageGenSize(size: String) = scope.launch { settingsManager.saveImageGenSize(size) }
     fun setShowDocumentationFab(enabled: Boolean) = scope.launch { settingsManager.saveShowDocumentationFab(enabled) }
-    fun setDeveloperOptionsEnabled(enabled: Boolean) =
-        scope.launch { settingsManager.saveDeveloperOptionsEnabled(enabled) }
-    fun setDebugModelEnabled(enabled: Boolean) =
-        scope.launch { settingsManager.saveDebugModelEnabled(enabled) }
+    fun setDeveloperOptionsEnabled(enabled: Boolean) = scope.launch { settingsManager.saveDeveloperOptionsEnabled(enabled) }
+    fun setDebugModelEnabled(enabled: Boolean) = scope.launch { settingsManager.saveDebugModelEnabled(enabled) }
     fun setShellEnabled(enabled: Boolean) = scope.launch { settingsManager.saveShellEnabled(enabled) }
     fun setAutomationToolsEnabled(enabled: Boolean) = scope.launch { settingsManager.saveAutomationToolsEnabled(enabled) }
     fun setExactExecutionEnabled(enabled: Boolean) = scope.launch { settingsManager.saveExactExecutionEnabled(enabled) }
-    fun setAutomationWakeLockEnabled(enabled: Boolean) =
-        scope.launch { settingsManager.saveAutomationWakeLockEnabled(enabled) }
+    fun setAutomationWakeLockEnabled(enabled: Boolean) = scope.launch { settingsManager.saveAutomationWakeLockEnabled(enabled) }
     fun setProxyEnabled(enabled: Boolean) = scope.launch { settingsManager.saveProxyEnabled(enabled) }
     fun setProxyType(type: String) = scope.launch { settingsManager.saveProxyType(type) }
     fun setProxyHost(host: String) = scope.launch { settingsManager.saveProxyHost(host) }
@@ -672,10 +665,8 @@ class SettingsRepository(
     fun setThinkingBudgetEnabled(enabled: Boolean) = scope.launch { settingsManager.saveThinkingBudgetEnabled(enabled) }
     fun setThinkingBudgetTokens(tokens: Int) = scope.launch { settingsManager.saveThinkingBudgetTokens(tokens) }
     fun setOpenAiServiceTierEnabled(enabled: Boolean) = scope.launch { settingsManager.saveOpenAiServiceTierEnabled(enabled) }
-    fun setOpenAiServiceTier(tier: String) =
-        scope.launch { settingsManager.saveOpenAiServiceTier(tier) }
-    fun setOpenAiResponsesApiEnabled(enabled: Boolean) =
-        scope.launch { settingsManager.saveOpenAiResponsesApiEnabled(enabled) }
+    fun setOpenAiServiceTier(tier: String) = scope.launch { settingsManager.saveOpenAiServiceTier(tier) }
+    fun setOpenAiResponsesApiEnabled(enabled: Boolean) = scope.launch { settingsManager.saveOpenAiResponsesApiEnabled(enabled) }
     fun setDefaultTemperature(v: Float?) = scope.launch { settingsManager.saveDefaultTemperature(v) }
     fun setDefaultMaxTokens(v: Int?) = scope.launch { settingsManager.saveDefaultMaxTokens(v) }
     fun setDefaultTopP(v: Float?) = scope.launch { settingsManager.saveDefaultTopP(v) }
@@ -688,18 +679,14 @@ class SettingsRepository(
     fun setBlurEffectsEnabled(enabled: Boolean) = scope.launch { settingsManager.saveBlurEffectsEnabled(enabled) }
     fun setReduceMotion(enabled: Boolean) = scope.launch { settingsManager.saveReduceMotion(enabled) }
     fun setStickToBottom(enabled: Boolean) = scope.launch { settingsManager.saveStickToBottom(enabled) }
-    fun setParseInlineDollarMath(enabled: Boolean) =
-        scope.launch { settingsManager.saveParseInlineDollarMath(enabled) }
+    fun setParseInlineDollarMath(enabled: Boolean) = scope.launch { settingsManager.saveParseInlineDollarMath(enabled) }
     fun setAutoWrapCodeBlocks(enabled: Boolean) = scope.launch { settingsManager.saveAutoWrapCodeBlocks(enabled) }
     fun setHapticsEnabled(enabled: Boolean) = scope.launch { settingsManager.saveHapticsEnabled(enabled) }
-    fun setDetailedTokenUsage(enabled: Boolean) =
-        scope.launch { settingsManager.saveDetailedTokenUsage(enabled) }
+    fun setDetailedTokenUsage(enabled: Boolean) = scope.launch { settingsManager.saveDetailedTokenUsage(enabled) }
     fun setToolCallDisplayMode(mode: String) = scope.launch { settingsManager.saveToolCallDisplayMode(mode) }
-    fun setThinkingSegmentDisplayMode(mode: String) =
-        scope.launch { settingsManager.saveThinkingSegmentDisplayMode(mode) }
+    fun setThinkingSegmentDisplayMode(mode: String) = scope.launch { settingsManager.saveThinkingSegmentDisplayMode(mode) }
 
-    fun setAutoExpandActiveGroup(enabled: Boolean) =
-        scope.launch { settingsManager.saveAutoExpandActiveGroup(enabled) }
+    fun setAutoExpandActiveGroup(enabled: Boolean) = scope.launch { settingsManager.saveAutoExpandActiveGroup(enabled) }
     fun setSchemeStyle(style: String) = scope.launch { settingsManager.saveSchemeStyle(style) }
     fun setFontPreference(value: String) = scope.launch { settingsManager.saveFontPreference(value) }
     fun setCustomFontPath(value: String) = scope.launch { settingsManager.saveCustomFontPath(value) }
@@ -714,8 +701,7 @@ class SettingsRepository(
     fun updateShellDevice(device: ShellDeviceConfig) = scope.launch {
         settingsManager.saveShellDevices(shellDevices.value.map { if (it.id == device.id) device else it })
     }
-    fun addMcpServer(server: McpServerConfig) =
-        scope.launch { settingsManager.saveMcpServers(mcpServers.value + server) }
+    fun addMcpServer(server: McpServerConfig) = scope.launch { settingsManager.saveMcpServers(mcpServers.value + server) }
     fun updateMcpServer(server: McpServerConfig) = scope.launch {
         settingsManager.saveMcpServers(
             mcpServers.value.map { if (it.id == server.id) server else it },

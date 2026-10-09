@@ -365,29 +365,14 @@ class SettingsManager(private val context: Context) {
             if (id == null) it.remove(ACTIVE_SYSTEM_PROMPT_ID) else it[ACTIVE_SYSTEM_PROMPT_ID] = id 
         }
     }
-    suspend fun saveMaxContextWindow(window: Int) {
-        context.dataStore.edit {
-            it[CONTEXT_TOKEN_BUDGET] = ContextBudget.normalize(window).toString()
-        }
-    }
-    suspend fun saveVisualizeContextRollout(enabled: Boolean) {
-        context.dataStore.edit { it[VISUALIZE_CONTEXT_ROLLOUT] = enabled }
-    }
-    suspend fun saveCodeExecutionEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[CODE_EXECUTION_ENABLED] = enabled }
-    }
-    suspend fun saveGoogleSearchEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[GOOGLE_SEARCH_ENABLED] = enabled }
-    }
-    suspend fun saveThinkingEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[THINKING_ENABLED] = enabled }
-    }
-    suspend fun saveThinkingLevel(level: String) {
-        context.dataStore.edit { it[THINKING_LEVEL] = ThinkingLevels.normalize(level) }
-    }
-    suspend fun saveThinkingBudgetEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[THINKING_BUDGET_ENABLED] = enabled }
-    }
+    suspend fun saveMaxContextWindow(window: Int) =
+        context.dataStore.edit { it[CONTEXT_TOKEN_BUDGET] = ContextBudget.normalize(window).toString() }
+    suspend fun saveVisualizeContextRollout(enabled: Boolean) = context.dataStore.edit { it[VISUALIZE_CONTEXT_ROLLOUT] = enabled }
+    suspend fun saveCodeExecutionEnabled(enabled: Boolean) = context.dataStore.edit { it[CODE_EXECUTION_ENABLED] = enabled }
+    suspend fun saveGoogleSearchEnabled(enabled: Boolean) = context.dataStore.edit { it[GOOGLE_SEARCH_ENABLED] = enabled }
+    suspend fun saveThinkingEnabled(enabled: Boolean) = context.dataStore.edit { it[THINKING_ENABLED] = enabled }
+    suspend fun saveThinkingLevel(level: String) = context.dataStore.edit { it[THINKING_LEVEL] = ThinkingLevels.normalize(level) }
+    suspend fun saveThinkingBudgetEnabled(enabled: Boolean) = context.dataStore.edit { it[THINKING_BUDGET_ENABLED] = enabled }
     suspend fun saveThinkingBudgetTokens(tokens: Int) {
         context.dataStore.edit { it[THINKING_BUDGET_TOKENS] = tokens.coerceAtLeast(1) }
     }

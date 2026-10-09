@@ -207,7 +207,6 @@ class SettingsRepository(
     val sandboxEnabled: StateFlow<Boolean> = hot(settingsManager.sandboxEnabled, false)
     val sandboxSharedStorageEnabled: StateFlow<Boolean> =
         hot(settingsManager.sandboxSharedStorageEnabled, false)
-    /** Enablement for the agent tools ported from AIOPE (see AgentToolSettings). */
     val agentTools = AgentToolSettings(settingsManager, scope)
     val defaultTemperature: StateFlow<Float?> = hot(settingsManager.defaultTemperature, null)
     val defaultMaxTokens: StateFlow<Int?> = hot(settingsManager.defaultMaxTokens, null)

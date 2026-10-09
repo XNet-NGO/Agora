@@ -207,12 +207,8 @@ class SettingsRepository(
     val sandboxEnabled: StateFlow<Boolean> = hot(settingsManager.sandboxEnabled, false)
     val sandboxSharedStorageEnabled: StateFlow<Boolean> =
         hot(settingsManager.sandboxSharedStorageEnabled, false)
-    // ── Ported AIOPE tools (see port-aiope-tools branch) ─────────
-    val todoEnabled: StateFlow<Boolean> = hot(settingsManager.todoEnabled, false)
-    val locationEnabled: StateFlow<Boolean> = hot(settingsManager.locationEnabled, false)
-    val introspectEnabled: StateFlow<Boolean> = hot(settingsManager.introspectEnabled, false)
-    val networkScanEnabled: StateFlow<Boolean> = hot(settingsManager.networkScanEnabled, false)
-    val fileServerEnabled: StateFlow<Boolean> = hot(settingsManager.fileServerEnabled, false)
+    /** Enablement for the agent tools ported from AIOPE (see AgentToolSettings). */
+    val agentTools = AgentToolSettings(settingsManager, scope)
     val defaultTemperature: StateFlow<Float?> = hot(settingsManager.defaultTemperature, null)
     val defaultMaxTokens: StateFlow<Int?> = hot(settingsManager.defaultMaxTokens, null)
     val defaultTopP: StateFlow<Float?> = hot(settingsManager.defaultTopP, null)
@@ -721,12 +717,6 @@ class SettingsRepository(
             mcpServers.value.map { if (it.id == server.id) server else it },
         )
     }
-    // ── Ported AIOPE tools (see port-aiope-tools branch) ─────────
-    fun setTodoEnabled(enabled: Boolean) = scope.launch { settingsManager.saveTodoEnabled(enabled) }
-    fun setLocationEnabled(enabled: Boolean) = scope.launch { settingsManager.saveLocationEnabled(enabled) }
-    fun setIntrospectEnabled(enabled: Boolean) = scope.launch { settingsManager.saveIntrospectEnabled(enabled) }
-    fun setNetworkScanEnabled(enabled: Boolean) = scope.launch { settingsManager.saveNetworkScanEnabled(enabled) }
-    fun setFileServerEnabled(enabled: Boolean) = scope.launch { settingsManager.saveFileServerEnabled(enabled) }
 
     // ── Derived lookups ─────────────────────────────────────────
     /** Resolves the currently-active cleartext API key for [provider], or `null`. */

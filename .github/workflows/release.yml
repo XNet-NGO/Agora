@@ -1,11 +1,7 @@
 name: Release
 
 on:
-  # Build and publish a release when a PR is merged into master, or when a
-  # version tag (v*) is pushed. Manual dispatch is also supported.
-  push:
-    branches: [master]
-    tags: ["v*"]
+  # Build and publish a release only when manually dispatched from the Actions UI.
   workflow_dispatch:
 
 permissions:
@@ -66,11 +62,7 @@ jobs:
       - name: Determine version tag
         id: version
         run: |
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "tag=${{ github.ref_name }}"
-          else
-            echo "tag=v$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1)"
-          fi
+          echo "tag=v$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1)"
           echo "sha=$(git rev-parse --short HEAD)"
 
       - name: Create GitHub Release

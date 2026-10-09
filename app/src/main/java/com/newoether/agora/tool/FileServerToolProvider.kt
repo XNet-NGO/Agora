@@ -11,6 +11,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import java.io.BufferedOutputStream
 import java.io.File
@@ -290,7 +291,7 @@ internal class SimpleHttpServer(
         keyStore.setKeyEntry(
             "agora",
             keyPair.private,
-            charArrayOf("agora".toCharArray().let { it }),
+            "agora".toCharArray(),
             arrayOf(cert),
         )
         val kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
@@ -464,12 +465,12 @@ internal class SimpleHttpServer(
         target.parentFile?.mkdirs()
         try {
             BufferedOutputStream(target.outputStream()).use { output ->
-                val buffer = ByteArray(8192)
+                val buffer = CharArray(8192)
                 var remaining = contentLength
                 while (remaining > 0) {
                     val read = reader.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
                     if (read < 0) break
-                    output.write(buffer, 0, read)
+                    output.write(String(buffer, 0, read).toByteArray(Charsets.ISO_8859_1))
                     remaining -= read
                 }
                 output.flush()

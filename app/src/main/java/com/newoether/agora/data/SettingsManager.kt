@@ -696,21 +696,11 @@ class SettingsManager(private val context: Context) {
         context.dataStore.edit { it[SANDBOX_SHARED_STORAGE_ENABLED] = enabled }
     }
     // ── Ported AIOPE tools (see port-aiope-tools branch) ─────────
-    suspend fun saveTodoEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[TODO_ENABLED] = enabled }
-    }
-    suspend fun saveLocationEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[LOCATION_ENABLED] = enabled }
-    }
-    suspend fun saveIntrospectEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[INTROSPECT_ENABLED] = enabled }
-    }
-    suspend fun saveNetworkScanEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[NETWORK_SCAN_ENABLED] = enabled }
-    }
-    suspend fun saveFileServerEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[FILE_SERVER_ENABLED] = enabled }
-    }
+    suspend fun saveTodoEnabled(enabled: Boolean) = context.dataStore.edit { it[TODO_ENABLED] = enabled }
+    suspend fun saveLocationEnabled(enabled: Boolean) = context.dataStore.edit { it[LOCATION_ENABLED] = enabled }
+    suspend fun saveIntrospectEnabled(enabled: Boolean) = context.dataStore.edit { it[INTROSPECT_ENABLED] = enabled }
+    suspend fun saveNetworkScanEnabled(enabled: Boolean) = context.dataStore.edit { it[NETWORK_SCAN_ENABLED] = enabled }
+    suspend fun saveFileServerEnabled(enabled: Boolean) = context.dataStore.edit { it[FILE_SERVER_ENABLED] = enabled }
     suspend fun saveThemeMode(mode: String) {
         context.dataStore.edit { it[THEME_MODE] = mode }
     }

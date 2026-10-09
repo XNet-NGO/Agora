@@ -215,14 +215,12 @@ class SettingsManager(private val context: Context) {
     val sandboxEnabled: Flow<Boolean> = context.dataStore.data.map { it[SANDBOX_ENABLED] ?: false }
     val sandboxSharedStorageEnabled: Flow<Boolean> =
         context.dataStore.data.map { it[SANDBOX_SHARED_STORAGE_ENABLED] ?: false }
-
-    // ── Ported AIOPE tools (see port-aiope-tools branch) ─────────
+    // Ported agent tools (todo, location, introspect, network scan, file server).
     val todoEnabled: Flow<Boolean> = context.dataStore.data.map { it[TODO_ENABLED] ?: false }
     val locationEnabled: Flow<Boolean> = context.dataStore.data.map { it[LOCATION_ENABLED] ?: false }
     val introspectEnabled: Flow<Boolean> = context.dataStore.data.map { it[INTROSPECT_ENABLED] ?: false }
     val networkScanEnabled: Flow<Boolean> = context.dataStore.data.map { it[NETWORK_SCAN_ENABLED] ?: false }
     val fileServerEnabled: Flow<Boolean> = context.dataStore.data.map { it[FILE_SERVER_ENABLED] ?: false }
-
     val themeMode: Flow<String> = context.dataStore.data.map { it[THEME_MODE] ?: "FOLLOW_DEVICE" }
     val amoledEnabled: Flow<Boolean> = context.dataStore.data.map { it[AMOLED_ENABLED] ?: false }
     val colorScheme: Flow<String> = context.dataStore.data.map {
@@ -695,7 +693,7 @@ class SettingsManager(private val context: Context) {
     suspend fun saveSandboxSharedStorageEnabled(enabled: Boolean) {
         context.dataStore.edit { it[SANDBOX_SHARED_STORAGE_ENABLED] = enabled }
     }
-    // ── Ported AIOPE tools (see port-aiope-tools branch) ─────────
+    // Ported agent tools (todo, location, introspect, network scan, file server).
     suspend fun saveTodoEnabled(enabled: Boolean) = context.dataStore.edit { it[TODO_ENABLED] = enabled }
     suspend fun saveLocationEnabled(enabled: Boolean) = context.dataStore.edit { it[LOCATION_ENABLED] = enabled }
     suspend fun saveIntrospectEnabled(enabled: Boolean) = context.dataStore.edit { it[INTROSPECT_ENABLED] = enabled }

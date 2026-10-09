@@ -797,4 +797,19 @@
     <string name="message_source_loop">Loop</string>
     <string name="message_source_ask_user">Ask User</string>
     <string name="message_source_unanswered">Unanswered</string>
+
+    <!-- Ported AIOPE agent tools (see port-aiope-tools branch) -->
+    <string name="settings_agent_tools">Agent Tools</string>
+    <string name="settings_agent_tools_desc">Ported tools: todo, location, introspect, network scan, file server</string>
+    <string name="agent_tools_title">Agent Tools</string>
+    <string name="agent_tools_todo">Todo List</string>
+    <string name="agent_tools_todo_desc">Allow the model to read and write a working todo list (todo_read / todo_write)</string>
+    <string name="agent_tools_location">Location</string>
+    <string name="agent_tools_location_desc">Allow the model to read GPS location and search places (get_location / search_location)</string>
+    <string name="agent_tools_introspect">Self-Knowledge</string>
+    <string name="agent_tools_introspect_desc">Allow the model to answer questions about Agora from a bundled manual (introspect)</string>
+    <string name="agent_tools_network_scan">Network Scanner</string>
+    <string name="agent_tools_network_scan_desc">Allow the model to scan the local network for live hosts (network_scan)</string>
+    <string name="agent_tools_file_server">File Server</string>
+    <string name="agent_tools_file_server_desc">Allow the model to start/stop an HTTP file server (file_server_start/stop/status)</string>
 </resources>

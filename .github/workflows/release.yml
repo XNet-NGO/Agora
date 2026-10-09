@@ -1,13 +1,11 @@
 name: Release
 
 on:
-  # Build and publish a release whenever a PR is merged into master.
+  # Build and publish a release when a PR is merged into master, or when a
+  # version tag (v*) is pushed. Manual dispatch is also supported.
   push:
     branches: [master]
-  # Also allow tagging to produce a release.
-  push:
-    tags:
-      - "v*"
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:

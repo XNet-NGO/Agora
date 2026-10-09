@@ -6,17 +6,23 @@ import android.app.Application
 import com.newoether.agora.api.ToolDefinition
 import com.newoether.agora.data.MemoryManager
 import com.newoether.agora.data.SkillManager
+import com.newoether.agora.data.TodoStore
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.data.repository.ConversationRepository
 import com.newoether.agora.model.RunEffectIdentity
 import com.newoether.agora.model.ToolCallData
 import com.newoether.agora.model.ToolExecutionStates
 import com.newoether.agora.sandbox.SandboxManagerFactory
+import com.newoether.agora.tool.FileServerToolProvider
 import com.newoether.agora.tool.ImageGenToolProvider
+import com.newoether.agora.tool.IntrospectToolProvider
+import com.newoether.agora.tool.LocationToolProvider
 import com.newoether.agora.tool.MemoryToolProvider
+import com.newoether.agora.tool.NetworkScannerToolProvider
 import com.newoether.agora.tool.SkillToolProvider
 import com.newoether.agora.tool.RagToolProvider
 import com.newoether.agora.tool.ShellToolProvider
+import com.newoether.agora.tool.TodoToolProvider
 import com.newoether.agora.tool.ToolExecutionEvent
 import com.newoether.agora.tool.ToolExecutionResult
 import com.newoether.agora.tool.ToolImageStore
@@ -104,6 +110,12 @@ internal class GenerationToolExecutor private constructor(
                     RagToolProvider(conversations),
                     imageGenProvider,
                     shellProvider,
+                    // ── Ported AIOPE tools (see port-aiope-tools branch) ─────────────
+                    TodoToolProvider(TodoStore(app)),
+                    LocationToolProvider(app),
+                    IntrospectToolProvider(app),
+                    NetworkScannerToolProvider(app),
+                    FileServerToolProvider(app),
                 ) + additionalProviders,
                 imageGenProvider = imageGenProvider,
             )

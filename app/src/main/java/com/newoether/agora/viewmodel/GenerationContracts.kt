@@ -103,7 +103,18 @@ data class GenerationContext(
     val transcriptionAnthropicCacheTtl: String = "1h",
     /** Wall-clock budget for a single tool execution; downgrades a blocking tool from a
      *  permanent generation hang to a recoverable tool error (#49). */
-    val toolTimeoutMs: Long = Constants.TOOL_EXECUTION_TIMEOUT_MS
+    val toolTimeoutMs: Long = Constants.TOOL_EXECUTION_TIMEOUT_MS,
+    // ── Ported AIOPE tools (see port-aiope-tools branch) ─────────────────────────
+    /** Enables todo_write / todo_read. */
+    val todoEnabled: Boolean = false,
+    /** Enables get_location / search_location. */
+    val locationEnabled: Boolean = false,
+    /** Enables introspect (self-knowledge from bundled manual). */
+    val introspectEnabled: Boolean = false,
+    /** Enables network_scan. */
+    val networkScanEnabled: Boolean = false,
+    /** Enables file_server_start / file_server_stop / file_server_status. */
+    val fileServerEnabled: Boolean = false,
 )
 
 /** Frozen automatic-Compact policy and provider access captured with one generation. */

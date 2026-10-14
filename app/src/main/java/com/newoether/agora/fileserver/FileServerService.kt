@@ -232,6 +232,17 @@ class FileServerService : Service() {
                 return
             }
             val uploadDir = File(rootDir, path)
+            if (!ensureWritableDir(uploadDir)) {
+                FileServerHttp.sendError(
+                    out,
+                    500,
+                    "Upload failed: the shared folder is not writable by Agora. " +
+                        "Android scoped storage blocks apps from writing to folders owned by " +
+                        "other apps or the media store. Pick a folder Agora owns (its own " +
+                        "storage or Download) in File Server settings.",
+                )
+                return
+            }
             val spool = File.createTempFile("agora-upload", ".tmp", cacheDir)
             try {
                 BufferedOutputStream(FileOutputStream(spool), FileServerMultipart.SPOOL_BLOCK).use { sink ->
@@ -258,9 +269,26 @@ class FileServerService : Service() {
                 spool.delete()
             }
         } catch (e: Exception) {
-            FileServerHttp.sendError(out, 500, "Upload failed: ${e.message}")
+            FileServerHttp.sendError(out, 500, "Upload failed: ${e.javaClass.simpleName}")
         }
     }
+
+    /**
+     * Verifies the app can actually create and write files in [dir] under scoped storage. Owning
+     * a SAF tree grant does not imply filesystem write access, so this probes with a temp file
+     * instead of trusting [File.canWrite], which lies on some media-store paths.
+     */
+    private fun ensureWritableDir(dir: File): Boolean = runCatching {
+        if (!dir.exists() && !dir.mkdirs()) return false
+        if (!dir.isDirectory) return false
+        val probe = File(dir, ".agora-write-probe-${System.nanoTime()}")
+        try {
+            probe.outputStream().use { it.write(0) }
+            true
+        } finally {
+            probe.delete()
+        }
+    }.getOrDefault(false)
 
     private fun wifiIp(): String {
         runCatching {

@@ -23,5 +23,5 @@
     <string name="fileserver_start">Start Server</string>
     <string name="fileserver_stop">Stop Server</string>
     <string name="fileserver_select_dir_first">Select a directory first</string>
-    <string name="fileserver_help">Serves files from the selected directory over your local network. Other devices on the same Wi-Fi can access them by opening the URL in a browser.</string>
+    <string name="fileserver_help">Serves files from the selected directory over your local network. Other devices on the same Wi-Fi can access them by opening the URL in a browser. Note: Android scoped storage lets Agora read most folders but only write to folders it owns (its own app storage or Download), so uploads to other apps\u2019 folders will be rejected.</string>
 </resources>

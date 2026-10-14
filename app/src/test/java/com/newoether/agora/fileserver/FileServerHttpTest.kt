@@ -55,4 +55,18 @@ class FileServerHttpTest {
         assertFalse(html.contains(".."))
         assertTrue(html.contains("0 items"))
     }
+
+    @Test
+    fun pinPromptRendersLockGlyphNotLiteralEscape() {
+        val out = java.io.ByteArrayOutputStream()
+        val buffered = java.io.BufferedOutputStream(out)
+        FileServerHttp.sendPinPrompt(buffered)
+        buffered.flush()
+        val body = out.toString(Charsets.UTF_8.name())
+        assertTrue("title present", body.contains("PIN Required"))
+        // The raw-string lock must be an HTML entity (or real glyph), never the literal \\u escape.
+        assertFalse("no literal unicode escape leaks", body.contains("\\uD83D"))
+        assertTrue("lock entity rendered", body.contains("&#128274;"))
+        assertTrue("401 status", body.startsWith("HTTP/1.1 401"))
+    }
 }

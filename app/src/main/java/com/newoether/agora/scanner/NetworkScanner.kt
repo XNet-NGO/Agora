@@ -51,6 +51,33 @@ class NetworkScanner(context: Context) {
         scanJob = scope.launch { udpProbe(ip) }
     }
 
+    /** Port-scans an explicit list of hosts (from the custom-scan sheet). */
+    fun launchCustomScan(ips: List<String>, ports: List<Int>, timeout: Int = 500) {
+        scanJob?.cancel()
+        scanJob = scope.launch {
+            _state.value = _state.value.copy(isScanning = true, phase = "Custom scan...", progress = 0f)
+            ips.forEachIndexed { idx, ip ->
+                scanPorts(ip, ports, timeout)
+                _state.value = _state.value.copy(progress = (idx + 1).toFloat() / ips.size)
+            }
+        }
+    }
+
+    /** Sweeps an arbitrary /24 the user types (e.g. the far side of a VPN). */
+    fun launchSubnetScan(subnet: String) {
+        scanJob?.cancel()
+        scanJob = scope.launch { scanSubnet(subnet) }
+    }
+
+    /** Fetches the public WAN IP; the only part of the scanner that leaves the LAN. */
+    fun launchFetchWanIp() {
+        scope.launch { fetchWanIp() }
+    }
+
+    /** Sends a Wake-on-LAN magic packet to [mac]; returns false on a malformed MAC or send error. */
+    suspend fun wakeOnLan(mac: String, broadcastIp: String = "255.255.255.255"): Boolean =
+        net.sendWakeOnLan(mac, broadcastIp)
+
     fun cancelScan() {
         scanJob?.cancel()
         scanJob = null
@@ -257,8 +284,48 @@ class NetworkScanner(context: Context) {
             val hostname = InetAddress.getByName(ip).canonicalHostName
             if (hostname == ip) "No PTR record" else hostname
         } catch (e: Exception) {
-            "Error: ${e.message}"
+            "Error: ${e.javaClass.simpleName}"
         }
+    }
+
+    /** Forward DNS resolution; returns all resolved addresses newline-joined, for the DNS sheet. */
+    suspend fun dnsLookup(host: String): String = withContext(Dispatchers.IO) {
+        try {
+            InetAddress.getAllByName(host).mapNotNull { it.hostAddress }.joinToString("\n")
+                .ifBlank { "No addresses" }
+        } catch (e: Exception) {
+            "Error: ${e.javaClass.simpleName}"
+        }
+    }
+
+    /** The same ICMP+TCP /24 sweep as discovery, for an arbitrary subnet the user types. */
+    private suspend fun scanSubnet(subnet: String) {
+        _state.value = _state.value.copy(isScanning = true, phase = "Scanning $subnet.0/24...", progress = 0f)
+        val aliveHosts = ConcurrentHashMap<String, Boolean>()
+        sweepSubnet(subnet, aliveHosts) { done ->
+            _state.value = _state.value.copy(progress = done.toFloat() / 254f * 0.8f)
+        }
+        delay(500)
+        _state.value = _state.value.copy(phase = "Reading ARP table...")
+        val neighbors = net.readNeighborTable().toMap()
+        val allIps = (aliveHosts.keys + neighbors.keys.filter { it.startsWith("$subnet.") }).distinct()
+        val gatewayIp = net.getGatewayIp()
+        val newHosts = allIps.map { ip ->
+            val mac = neighbors[ip]
+            HostInfo(ip = ip, mac = mac, vendor = net.lookupVendor(mac), isGateway = ip == gatewayIp)
+        }
+        val existingOther = _state.value.hosts.filter { !it.ip.startsWith("$subnet.") }
+        val merged = (existingOther + newHosts).sortedBy { NetworkScanNet.ipToLong(it.ip) }
+        _state.value = _state.value.copy(
+            isScanning = false,
+            phase = "Done — ${newHosts.size} hosts on $subnet.0/24",
+            progress = 1f,
+            hosts = merged,
+        )
+    }
+
+    private suspend fun fetchWanIp() {
+        _state.value = _state.value.copy(wanIp = net.fetchWanIp())
     }
 
     companion object {

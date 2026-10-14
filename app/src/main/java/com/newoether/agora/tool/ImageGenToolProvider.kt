@@ -301,7 +301,7 @@ class ImageGenToolProvider(
         val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
         android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         val mime = bounds.outMimeType?.takeIf { it.startsWith("image/") } ?: "image/png"
-        return "$mime;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        return "data:$mime;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
     }
 
     /** DashScope expects width*height with an asterisk: "1024x1024" -> "1024*1024". */

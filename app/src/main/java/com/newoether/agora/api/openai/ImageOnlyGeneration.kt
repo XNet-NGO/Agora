@@ -48,7 +48,7 @@ private fun dataUrl(bytes: ByteArray): String {
     val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
     android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
     val mime = bounds.outMimeType?.takeIf { it.startsWith("image/") } ?: "image/png"
-    return "$mime;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+    return "data:$mime;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
 }
 
 /**

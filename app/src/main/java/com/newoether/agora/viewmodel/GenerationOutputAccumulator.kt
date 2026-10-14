@@ -150,7 +150,8 @@ internal class GenerationOutputAccumulator(
                     filePrefix = "generated_image",
                 )
                 totalImageCount++
-                generatedImages.add(attachment.path)
+                // The image renders through the generate_image tool segment; do NOT also add
+                // it to generatedImages — model-row images would render it a second time.
                 toolOverlay.append(
                     MessageSegment(
                         type = "tool",

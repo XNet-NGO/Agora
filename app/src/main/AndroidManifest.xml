@@ -89,6 +89,16 @@
                 android:value="Local web server that lets the user control this app from their own browser on the same network" />
         </service>
 
+        <!-- LAN file server; runs until the user turns it off, so specialUse not dataSync. -->
+        <service
+            android:name=".fileserver.FileServerService"
+            android:foregroundServiceType="specialUse"
+            android:exported="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Local HTTP file server that shares a user-chosen folder with other devices on the same network" />
+        </service>
+
         <!-- WorkManager owns the foreground lifecycle for scheduled automation runs. -->
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"

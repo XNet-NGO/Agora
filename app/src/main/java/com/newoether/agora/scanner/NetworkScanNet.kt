@@ -177,12 +177,15 @@ internal class NetworkScanNet(private val context: Context) {
     }
 
     @Suppress("DEPRECATION")
-    fun getGatewayIp(): String? {
+    fun getGatewayIp(): String? = runCatching {
         val wm = context.getSystemService(Context.WIFI_SERVICE) as WifiManager
         val gw = wm.dhcpInfo?.gateway ?: 0
-        if (gw == 0) return null
-        return "${gw and 0xff}.${gw shr 8 and 0xff}.${gw shr 16 and 0xff}.${gw shr 24 and 0xff}"
-    }
+        if (gw == 0) {
+            null
+        } else {
+            "${gw and 0xff}.${gw shr 8 and 0xff}.${gw shr 16 and 0xff}.${gw shr 24 and 0xff}"
+        }
+    }.getOrNull()
 
     fun isCellularIp(ip: String): Boolean {
         runCatching {

@@ -14,8 +14,9 @@
     <string name="fileserver_url_copied">URL copied</string>
     <string name="fileserver_shared_directory">Shared directory</string>
     <string name="fileserver_path">Path</string>
-    <string name="fileserver_path_placeholder">/storage/emulated/0/Download</string>
+    <string name="fileserver_path_placeholder">Tap “Use Agora storage” or Browse…</string>
     <string name="fileserver_browse">Browse…</string>
+    <string name="fileserver_use_agora_storage">Use Agora storage</string>
     <string name="fileserver_port">Port</string>
     <string name="fileserver_https">HTTPS (self-signed)</string>
     <string name="fileserver_pin">PIN (optional)</string>

@@ -7,6 +7,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +49,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import com.newoether.agora.R
 import com.newoether.agora.fileserver.FileServerService
 
@@ -66,6 +69,26 @@ fun SettingsFileServerPage(onBack: () -> Unit) {
     var useHttps by remember { mutableStateOf(prefs.getBoolean("use_https", false)) }
     var pinCode by remember { mutableStateOf(prefs.getString("pin", "") ?: "") }
     var serverUrl by remember { mutableStateOf(FileServerService.currentUrl()) }
+
+    // The service computes the real LAN URL in onStartCommand; poll until it publishes it so the
+    // Copy button never shows a placeholder.
+    LaunchedEffect(isRunning) {
+        if (isRunning) {
+            repeat(20) {
+                val url = FileServerService.currentUrl()
+                if (url != null) {
+                    serverUrl = url
+                    return@LaunchedEffect
+                }
+                delay(250)
+            }
+        }
+    }
+
+    // A folder Agora provably owns under scoped storage (writable with no permission).
+    val agoraStoragePath = remember {
+        (context.getExternalFilesDir(null) ?: context.filesDir).absolutePath
+    }
 
     val dirPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
@@ -153,8 +176,16 @@ fun SettingsFileServerPage(onBack: () -> Unit) {
                 singleLine = true,
             )
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = { dirPicker.launch(null) }) {
-                Text(stringResource(R.string.fileserver_browse))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    rootPath = agoraStoragePath
+                    prefs.edit().putString("root_path", agoraStoragePath).apply()
+                }) {
+                    Text(stringResource(R.string.fileserver_use_agora_storage))
+                }
+                OutlinedButton(onClick = { dirPicker.launch(null) }) {
+                    Text(stringResource(R.string.fileserver_browse))
+                }
             }
 
             Spacer(Modifier.height(16.dp))
@@ -216,7 +247,7 @@ fun SettingsFileServerPage(onBack: () -> Unit) {
                         val p = port.toIntOrNull() ?: FileServerService.DEFAULT_PORT
                         FileServerService.start(context, rootPath, p, useHttps, pinCode.ifBlank { null })
                         isRunning = true
-                        serverUrl = "${if (useHttps) "https" else "http"}://…:$p"
+                        serverUrl = null // real URL arrives via LaunchedEffect once the service publishes it
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),

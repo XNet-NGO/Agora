@@ -277,10 +277,11 @@ class FileServerService : Service() {
             }
         }
         @Suppress("DEPRECATION")
-        val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        @Suppress("DEPRECATION")
-        val ip = wm.connectionInfo.ipAddress
-        return "${ip and 0xff}.${ip shr 8 and 0xff}.${ip shr 16 and 0xff}.${ip shr 24 and 0xff}"
+        return runCatching {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val ip = wm.connectionInfo.ipAddress
+            "${ip and 0xff}.${ip shr 8 and 0xff}.${ip shr 16 and 0xff}.${ip shr 24 and 0xff}"
+        }.getOrDefault("0.0.0.0")
     }
 
     private fun notification(url: String) = NotificationCompat.Builder(this, CHANNEL_ID)

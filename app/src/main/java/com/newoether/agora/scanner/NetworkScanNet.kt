@@ -9,6 +9,8 @@ import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.NetworkInterface
 import java.net.Socket
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Low-level, side-effecting network helpers for the scanner: ARP/neighbor reads, TCP banner
@@ -138,6 +140,36 @@ internal class NetworkScanNet(private val context: Context) {
         }
     } catch (_: Exception) {
         null
+    }
+
+    /** Sends a Wake-on-LAN magic packet for [mac] as a UDP broadcast to port 9. */
+    suspend fun sendWakeOnLan(mac: String, broadcastIp: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val packet = NetworkScanInput.magicPacket(mac) ?: return@withContext false
+            runCatching {
+                DatagramSocket().use { sock ->
+                    sock.broadcast = true
+                    sock.send(DatagramPacket(packet, packet.size, InetAddress.getByName(broadcastIp), 9))
+                }
+                true
+            }.getOrDefault(false)
+        }
+
+    /** Best-effort public WAN IP via two public echo endpoints; the only off-LAN call. */
+    suspend fun fetchWanIp(): String = withContext(Dispatchers.IO) {
+        fun get(url: String): String? = runCatching {
+            (java.net.URL(url).openConnection() as java.net.HttpURLConnection).run {
+                connectTimeout = 10_000
+                readTimeout = 10_000
+                instanceFollowRedirects = true
+                if (responseCode == 200) {
+                    inputStream.bufferedReader().use { it.readText() }.trim().also { disconnect() }
+                } else {
+                    "HTTP $responseCode".also { disconnect() }
+                }
+            }
+        }.getOrNull()
+        get("https://api.ipify.org") ?: get("https://checkip.amazonaws.com") ?: "Unavailable"
     }
 
     fun getAllLocalIps(): List<String> {

@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  # Build and publish a release only when manually dispatched from the Actions UI.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: "platform-tools ndk;28.2.13676358"
+
+      - name: Restore signing key
+        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > ${{ github.workspace }}/release.jks
+          cat >> local.properties <<EOF
+          storeFile=${{ github.workspace }}/release.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build PRoot runtime
+        run: |
+          chmod +x ./build-proot.sh
+          ./build-proot.sh
+
+      # Release variants inherit defaultConfig's arm64-v8a abiFilter, so this
+      # produces a single-arm64 APK (the only target the build flow needs).
+      - name: Build F-Droid release APK (arm64-v8a)
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleFdroidRelease
+
+      - name: Determine version tag
+        id: version
+        run: |
+          echo "tag=v$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1)"
+          echo "sha=$(git rev-parse --short HEAD)"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Agora ${{ steps.version.outputs.tag }}
+          body: |
+            Automated arm64-v8a build from commit `${{ steps.version.outputs.sha }}`.
+
+            ## Artifacts
+            - **F-Droid APK (arm64-v8a)** — `app/build/outputs/apk/fdroid/release`
+
+            > If the signing key is not configured in repository secrets, this is a
+            > debug-signed build for testing only.
+          draft: false
+          prerelease: false
+          files: |
+            app/build/outputs/apk/fdroid/release/*.apk

@@ -152,3 +152,10 @@ internal val AUTO_DELETE_ENABLED = booleanPreferencesKey("auto_delete_enabled")
 internal val AUTO_DELETE_PERIOD_HOURS = intPreferencesKey("auto_delete_period_hours")
 internal val LAST_BACKUP_TIMESTAMP = longPreferencesKey("last_backup_timestamp")
 internal val LAST_MODELS_FETCH_FINGERPRINT = stringPreferencesKey("last_models_fetch_fingerprint")
+
+// ── Ported AIOPE tools (see port-aiope-tools branch) ─────────
+internal val TODO_ENABLED = booleanPreferencesKey("todo_enabled")
+internal val LOCATION_ENABLED = booleanPreferencesKey("location_enabled")
+internal val INTROSPECT_ENABLED = booleanPreferencesKey("introspect_enabled")
+internal val NETWORK_SCAN_ENABLED = booleanPreferencesKey("network_scan_enabled")
+internal val FILE_SERVER_ENABLED = booleanPreferencesKey("file_server_enabled")

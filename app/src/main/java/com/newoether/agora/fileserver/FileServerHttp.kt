@@ -142,7 +142,7 @@ internal object FileServerHttp {
         color:#eee;text-align:center;letter-spacing:4px;width:150px}
         button{margin-top:16px;padding:10px 24px;background:#6cf;color:#000;border:none;
         border-radius:6px;cursor:pointer;font-size:16px}</style></head>
-        <body><div class='box'><h2>\uD83D\uDD12 PIN Required</h2>
+        <body><div class='box'><h2>&#128274; PIN Required</h2>
         <form onsubmit="fetch('/',{method:'POST',headers:{'X-Pin':document.getElementById('p').value}})
         .then(r=>{if(r.redirected)location.href=r.url;else alert('Wrong PIN')});return false;">
         <input id='p' type='password' maxlength='8' placeholder='PIN' autofocus><br>

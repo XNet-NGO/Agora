@@ -76,6 +76,13 @@ data class DocumentEmbeddingSearchRow(
     val dimension: Int,
 )
 
+/** A distinct document in a corpus for management listing. */
+data class DocumentCorpusDocRow(
+    val docId: String,
+    val title: String,
+    val chunks: Int,
+)
+
 /**
  * Storage + bounded keyset reads for corpus document embeddings. Reads mirror the message-corpus
  * contract: a minimal projection, strictly ordered by id, bounded by LIMIT — never a full-corpus
@@ -88,6 +95,25 @@ interface DocumentEmbeddingDao {
 
     @Query("DELETE FROM document_embeddings WHERE corpus = :corpus")
     suspend fun clearCorpus(corpus: String)
+
+    @Query("DELETE FROM document_embeddings WHERE corpus = :corpus AND docId = :docId")
+    suspend fun deleteDoc(corpus: String, docId: String)
+
+    /** Distinct documents in a corpus with their title and chunk count, for the management UI. */
+    @Query(
+        "SELECT docId, title, COUNT(*) AS chunks FROM document_embeddings " +
+            "WHERE corpus = :corpus GROUP BY docId, title ORDER BY title",
+    )
+    suspend fun listDocs(corpus: String): List<DocumentCorpusDocRow>
+
+    @Query("SELECT COUNT(DISTINCT docId) FROM document_embeddings WHERE corpus = :corpus")
+    suspend fun docCount(corpus: String): Int
+
+    @Query(
+        "SELECT chunkText FROM document_embeddings WHERE corpus = :corpus AND docId = :docId " +
+            "ORDER BY chunkIndex LIMIT :limit",
+    )
+    suspend fun chunksForDoc(corpus: String, docId: String, limit: Int): List<String>
 
     @Query("SELECT COUNT(*) FROM document_embeddings WHERE corpus = :corpus AND modelId = :modelId")
     suspend fun countFor(corpus: String, modelId: String): Int

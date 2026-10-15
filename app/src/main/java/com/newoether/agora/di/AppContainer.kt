@@ -94,6 +94,11 @@ class AppContainer(
         com.newoether.agora.data.ManualIndexer(appContext, database.documentEmbeddingDao())
     }
 
+    /** User-imported document corpus (RAG over your own files), isolated from the manual. */
+    val userDocumentManager: com.newoether.agora.data.UserDocumentManager by lazy {
+        com.newoether.agora.data.UserDocumentManager(appContext, database.documentEmbeddingDao())
+    }
+
     // ── Repositories ──────────────────────────────────────────
 
     val conversationRepository: ConversationRepository by lazy {
@@ -347,6 +352,7 @@ class AppContainer(
             mcpToolProvider = mcpToolProvider,
             askUser = askUserController,
             manualIndexer = manualIndexer,
+            userDocumentManager = userDocumentManager,
             shellConfirmation = shellConfirmationController,
             registry = conversationStateRegistry,
             providerRegistry = providerRegistry,

@@ -4,6 +4,7 @@ import com.newoether.agora.api.EmbeddingClient
 import com.newoether.agora.api.LlamaEngine
 import com.newoether.agora.api.ProviderDefaults
 import com.newoether.agora.data.local.DocumentEmbeddingDao
+import com.newoether.agora.data.local.DocumentCorpusDocRow
 import com.newoether.agora.data.local.DocumentEmbeddingEntity
 import com.newoether.agora.data.local.EmbeddingSearchRow
 import com.newoether.agora.tool.BoundedSemanticEmbeddingSelector
@@ -82,6 +83,57 @@ class DocumentRagEngine(
         rows.chunked(INSERT_BATCH).forEach { dao.insertAll(it) }
         DebugLog.d(TAG, "indexed ${documents.size} docs -> ${rows.size} chunks for corpus=$corpus")
         rows.size
+    }
+
+    /**
+     * Embeds and stores a single [document] into the corpus WITHOUT clearing others (unlike
+     * [reindex]). Replaces any existing rows for the same docId. Returns chunks stored (0 on
+     * failure / no model). Used for incrementally managed corpora like user-uploaded documents.
+     */
+    suspend fun addOrReplaceDocument(
+        document: CorpusDocument,
+        config: EmbeddingModelConfig,
+        apiKey: String?,
+    ): Int = withContext(Dispatchers.IO) {
+        val fingerprint = corpusFingerprint(listOf(document))
+        val chunks = chunk(document.body)
+        val rows = mutableListOf<DocumentEmbeddingEntity>()
+        for ((index, chunkText) in chunks.withIndex()) {
+            val vector = embed(chunkText, config, apiKey)
+            if (vector == null) {
+                if (rows.isEmpty() && index == 0) return@withContext 0 // first embed failed = auth/config
+                continue
+            }
+            rows += DocumentEmbeddingEntity(
+                corpus = corpus,
+                docId = document.docId,
+                title = document.title,
+                chunkIndex = index,
+                modelId = config.id,
+                embedding = EmbeddingIndexer.floatsToBytes(vector),
+                dimension = vector.size,
+                chunkText = chunkText,
+                sourceFingerprint = fingerprint,
+            )
+        }
+        if (rows.isEmpty()) return@withContext 0
+        dao.deleteDoc(corpus, document.docId) // replace prior rows for this doc
+        rows.chunked(INSERT_BATCH).forEach { dao.insertAll(it) }
+        DebugLog.d(TAG, "added doc=${document.docId} -> ${rows.size} chunks (corpus=$corpus)")
+        rows.size
+    }
+
+    suspend fun removeDocument(docId: String): Unit = withContext(Dispatchers.IO) {
+        dao.deleteDoc(corpus, docId)
+    }
+
+    suspend fun listDocuments(): List<DocumentCorpusDocRow> = withContext(Dispatchers.IO) {
+        dao.listDocs(corpus)
+    }
+
+    /** Leading chunk texts for a document, for building a readable search snippet. */
+    suspend fun topChunks(docId: String, limit: Int): List<String> = withContext(Dispatchers.IO) {
+        dao.chunksForDoc(corpus, docId, limit)
     }
 
     /**

@@ -225,7 +225,12 @@ dependencies {
     implementation(libs.work.runtime.ktx)
     implementation(libs.jsch)
     implementation(libs.commons.compress)
-    implementation(libs.pdfbox.android)
+    // PDFBox-Android bundles the bouncycastle jdk15to18 family (bcprov, bcutil),
+    // which collides with the app's jdk18on 1.86 (via bouncycastle.pkix). Drop the
+    // stale family; the newer provider covers PDFBox's crypto use (encrypted PDFs).
+    implementation(libs.pdfbox.android) {
+        exclude(group = "org.bouncycastle")
+    }
     // WebUI server (stage 2): embedded HTTP with the pure-Kotlin CIO engine.
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.cio)

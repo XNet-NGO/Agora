@@ -51,10 +51,19 @@ class DocumentRagEngine(
     ): Int = withContext(Dispatchers.IO) {
         val fingerprint = corpusFingerprint(documents)
         val rows = mutableListOf<DocumentEmbeddingEntity>()
+        var attempted = 0
         for (doc in documents) {
             val chunks = chunk(doc.body)
-            chunks.forEachIndexed { index, chunkText ->
-                val vector = embed(chunkText, config, apiKey) ?: return@withContext 0
+            for ((index, chunkText) in chunks.withIndex()) {
+                attempted++
+                val vector = embed(chunkText, config, apiKey)
+                if (vector == null) {
+                    // First embed failing means a config/auth problem (e.g. bad key, 401): abort
+                    // early rather than hammering the endpoint for every chunk. A later failure is
+                    // treated as transient and that chunk is skipped.
+                    if (rows.isEmpty() && attempted == 1) return@withContext 0
+                    continue
+                }
                 rows += DocumentEmbeddingEntity(
                     corpus = corpus,
                     docId = doc.docId,
@@ -88,10 +97,14 @@ class DocumentRagEngine(
         documents: List<CorpusDocument>,
     ): List<DocumentRagHit> = withContext(Dispatchers.IO) {
         val queryVector = embed(query, config, apiKey) ?: return@withContext emptyList()
+        // The manual is a small curated corpus and introspect wants the single best page, not a
+        // noise gate over a huge personal store. Use a low floor so a real best-match is never
+        // filtered out by the conversation-RAG threshold (which is tuned for a different problem).
+        val effectiveThreshold = minOf(threshold, MANUAL_THRESHOLD_FLOOR)
         // Over-fetch chunk candidates, then collapse to the best chunk per document.
         val selection = selector.select(
             queryEmbedding = queryVector,
-            threshold = threshold,
+            threshold = effectiveThreshold,
             limit = limit * CHUNK_OVERFETCH,
         ) { afterId, pageLimit ->
             dao.pageFor(corpus, config.id, afterId, pageLimit).map { row ->
@@ -103,6 +116,12 @@ class DocumentRagEngine(
                 )
             }
         }
+        DebugLog.d(
+            TAG,
+            "manual search: queryDim=${queryVector.size} scanned=${selection.scannedRows} " +
+                "invalid=${selection.skippedInvalidRows} best=${"%.4f".format(selection.bestScore)} " +
+                "threshold=$effectiveThreshold hits=${selection.candidates.size}",
+        )
         val byDoc = LinkedHashMap<String, Float>()
         for (candidate in selection.candidates) {
             val existing = byDoc[candidate.messageId]
@@ -129,10 +148,13 @@ class DocumentRagEngine(
             if (!LlamaEngine.isModelReady(config.localFilePath)) return null
             LlamaEngine.computeEmbedding(text, config.localFilePath)
         } else {
-            if (apiKey.isNullOrBlank()) return null
+            // The key may live on the config itself (as stored in embedding_models) or be passed
+            // from the generation context; prefer the config's own key.
+            val key = config.remoteApiKey.ifBlank { apiKey.orEmpty() }
+            if (key.isBlank()) return null
             EmbeddingClient.computeEmbedding(
                 text = text,
-                apiKey = apiKey,
+                apiKey = key,
                 model = config.remoteModelName,
                 baseUrl = config.remoteBaseUrl.ifBlank { ProviderDefaults.OPENAI_BASE_URL },
             )
@@ -143,6 +165,13 @@ class DocumentRagEngine(
         private const val TAG = "DocumentRagEngine"
         private const val INSERT_BATCH = 64
         private const val CHUNK_OVERFETCH = 3
+
+        /**
+         * Lowest threshold the manual search uses. Curated corpus + "best page wins", so we keep
+         * only the strictly-positive-similarity gate (selector requires score > threshold) and let
+         * ranking pick the top page; the keyword fallback covers a genuine no-match.
+         */
+        private const val MANUAL_THRESHOLD_FLOOR = 0.0f
 
         /** Sentence-aware chunking with a soft character budget, mirroring RAG's approach. */
         fun chunk(body: String, maxChars: Int = 1200): List<String> {

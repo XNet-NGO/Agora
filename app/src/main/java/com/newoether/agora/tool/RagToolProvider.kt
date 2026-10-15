@@ -469,6 +469,9 @@ class RagToolProvider(
     }
 
     private fun resolveEmbeddingApiKey(ctx: GenerationContext): String? {
-        return ctx.embeddingApiKey.ifBlank { null }
+        // The key may be stored on the embedding model config itself or supplied via context;
+        // prefer the config's own key so a config-stored key is not sent blank (401).
+        val configKey = ctx.activeEmbeddingConfig?.remoteApiKey?.ifBlank { null }
+        return configKey ?: ctx.embeddingApiKey.ifBlank { null }
     }
 }

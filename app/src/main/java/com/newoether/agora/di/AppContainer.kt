@@ -89,6 +89,11 @@ class AppContainer(
     val skillManager: SkillManager by lazy { SkillManager(appContext) }
     val chatDao: ChatDao by lazy { database.chatDao() }
 
+    /** Bundled-manual semantic index powering the `introspect` self-knowledge tool. */
+    val manualIndexer: com.newoether.agora.data.ManualIndexer by lazy {
+        com.newoether.agora.data.ManualIndexer(appContext, database.documentEmbeddingDao())
+    }
+
     // ── Repositories ──────────────────────────────────────────
 
     val conversationRepository: ConversationRepository by lazy {
@@ -341,6 +346,7 @@ class AppContainer(
             automationToolProvider = automationToolProvider,
             mcpToolProvider = mcpToolProvider,
             askUser = askUserController,
+            manualIndexer = manualIndexer,
             shellConfirmation = shellConfirmationController,
             registry = conversationStateRegistry,
             providerRegistry = providerRegistry,

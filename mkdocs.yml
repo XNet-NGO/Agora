@@ -50,6 +50,7 @@ plugins:
             System Prompts: 系统提示词
             Agentic Tools: 代理工具
             Overview: 概述
+            Self-Knowledge: 自我认知
             Web Search: 网络搜索
             Remote Shell (Conch): 远程 Shell (Conch)
             Knowledge Management: 知识管理
@@ -92,6 +93,7 @@ plugins:
             System Prompts: 系統提示詞
             Agentic Tools: 代理工具
             Overview: 概述
+            Self-Knowledge: 自我認知
             Web Search: 網路搜尋
             Remote Shell (Conch): 遠端 Shell (Conch)
             Knowledge Management: 知識管理
@@ -459,6 +461,7 @@ nav:
   - System Prompts: system-prompts.md
   - Agentic Tools:
       - Overview: tools.md
+      - Self-Knowledge: introspect.md
       - MCP: mcp.md
       - Automation: automation.md
       - Web Search: web-search.md

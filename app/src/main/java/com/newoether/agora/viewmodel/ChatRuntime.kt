@@ -47,6 +47,7 @@ class ChatRuntime(
     automationToolProvider: AutomationToolProvider,
     mcpToolProvider: McpToolProvider,
     askUser: AskUserController,
+    manualIndexer: com.newoether.agora.data.ManualIndexer,
     shellConfirmation: ShellConfirmationController,
     registry: ConversationStateRegistry,
     providerRegistry: ProviderRegistry,
@@ -90,6 +91,7 @@ class ChatRuntime(
                 automationToolProvider,
                 mcpToolProvider,
                 AskUserToolProvider(askUser),
+                com.newoether.agora.tool.IntrospectToolProvider(manualIndexer),
             ),
             customProviders = { settings.customProviders.value },
         ).also { gm ->

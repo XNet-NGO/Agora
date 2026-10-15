@@ -328,9 +328,14 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                 SettingsItem(
                                     headlineContent = { Text(model.name) },
                                     supportingContent = {
-                                        val typeLabel = if (model.type == com.newoether.agora.data.EmbeddingModelType.REMOTE)
-                                            stringResource(R.string.embedding_type_remote)
-                                        else stringResource(R.string.embedding_type_local)
+                                        val typeLabel = when (model.type) {
+                                            com.newoether.agora.data.EmbeddingModelType.REMOTE ->
+                                                stringResource(R.string.embedding_type_remote)
+                                            com.newoether.agora.data.EmbeddingModelType.LOCAL_ONNX ->
+                                                stringResource(R.string.embedding_type_onnx)
+                                            com.newoether.agora.data.EmbeddingModelType.LOCAL ->
+                                                stringResource(R.string.embedding_type_local)
+                                        }
                                         val countLabel = cacheRow?.cached?.let { cached ->
                                             "$cached/${cacheRow.indexableTotal}"
                                         }
@@ -502,6 +507,9 @@ fun SettingsSearchPage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                 showLocalDialog = true
                             }) { Text(stringResource(R.string.add_local_model)) }
                         }
+                    }
+                    add {
+                        SettingsOnnxEmbeddingCard(viewModel)
                     }
                 }
             )

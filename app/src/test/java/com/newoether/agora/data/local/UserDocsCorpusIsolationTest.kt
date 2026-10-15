@@ -87,4 +87,25 @@ class UserDocsCorpusIsolationTest {
         assertEquals(1, dao.docCount("manual"))
         assertFalse(dao.listDocs("manual").isEmpty())
     }
+
+    @Test
+    fun chunksByIdsReturnsTheMatchedChunkNotTheDocumentHead() = runTest {
+        // Regression: search_documents used to return a document's FIRST chunks regardless of which
+        // chunk matched, so a large log only ever surfaced its header. The chunk-level search now
+        // fetches the actual matched chunk by row id — this guards that retrieval.
+        dao.insertAll(listOf(
+            row("user_docs", "log", 0, "App Log"),   // head (lifecycle noise)
+            row("user_docs", "log", 1, "App Log"),
+            row("user_docs", "log", 2, "App Log"),   // the chunk a network query would match
+        ))
+        // Row ids are assigned in insert order; chunkIndex 2 is the 3rd row.
+        val all = dao.chunksByIds("user_docs", listOf(1L, 2L, 3L)).associateBy { it.chunkIndex }
+        assertEquals(3, all.size)
+        // Fetching only the deep chunk's id returns that chunk's text, not the head.
+        val deepId = all.getValue(2).id
+        val fetched = dao.chunksByIds("user_docs", listOf(deepId)).single()
+        assertEquals(2, fetched.chunkIndex)
+        assertTrue(fetched.chunkText.contains("chunk 2"))
+        assertEquals("log", fetched.docId)
+    }
 }

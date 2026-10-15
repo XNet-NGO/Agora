@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="embedding_type_onnx">Trên thiết bị (ONNX)</string>
+    <string name="onnx_embed_title">Nhúng trên thiết bị (ONNX)</string>
+    <string name="onnx_embed_desc">Chạy nhúng hoàn toàn trên thiết bị của bạn bằng mô hình ONNX riêng tư (Bekko, đa ngôn ngữ, 384 chiều). Không cần đám mây, không cần khóa API. Hỗ trợ tìm kiếm hội thoại và RAG tài liệu.</string>
+    <string name="onnx_embed_download">Tải mô hình (~124MB)</string>
+    <string name="onnx_embed_downloading">Đang tải… %1$s</string>
+    <string name="onnx_embed_installed">Đã cài mô hình (%1$d MB)</string>
+    <string name="onnx_embed_add">Dùng để nhúng</string>
+    <string name="onnx_embed_remove">Xóa mô hình</string>
+    <string name="onnx_embed_added">Đã thêm làm mô hình nhúng — chọn ở trên để kích hoạt.</string>
+    <string name="onnx_embed_failed">Tải thất bại. Kiểm tra kết nối và thử lại.</string>
+</resources>

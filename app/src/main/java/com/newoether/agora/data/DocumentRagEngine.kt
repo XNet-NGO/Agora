@@ -5,6 +5,7 @@ import com.newoether.agora.api.LlamaEngine
 import com.newoether.agora.api.ProviderDefaults
 import com.newoether.agora.data.local.DocumentEmbeddingDao
 import com.newoether.agora.data.local.DocumentCorpusDocRow
+import com.newoether.agora.data.local.DocumentChunkRow
 import com.newoether.agora.data.local.DocumentEmbeddingEntity
 import com.newoether.agora.data.local.EmbeddingSearchRow
 import com.newoether.agora.tool.BoundedSemanticEmbeddingSelector
@@ -19,6 +20,15 @@ data class CorpusDocument(val docId: String, val title: String, val body: String
 /** A semantic hit: the full document plus its best chunk score. */
 data class DocumentRagHit(val docId: String, val title: String, val body: String, val score: Float)
 
+/** A chunk-level hit: the actual matched passage with its document title and position. */
+data class DocumentChunkHit(
+    val docId: String,
+    val title: String,
+    val chunkIndex: Int,
+    val text: String,
+    val score: Float,
+)
+
 /**
  * Generic semantic store for a document corpus (e.g. the bundled manual), isolated from the
  * conversation message corpus. Reuses the exact embedding generation ([EmbeddingClient] /
@@ -31,6 +41,7 @@ data class DocumentRagHit(val docId: String, val title: String, val body: String
 class DocumentRagEngine(
     private val dao: DocumentEmbeddingDao,
     private val corpus: String,
+    private val appContext: android.content.Context? = null,
 ) {
     private val selector = BoundedSemanticEmbeddingSelector()
 
@@ -137,6 +148,60 @@ class DocumentRagEngine(
     }
 
     /**
+     * Chunk-level semantic search: returns the actual best-matching passages (not collapsed to one
+     * per document, and NOT the document head). Each hit carries the real matched chunk text and its
+     * document title/id. This is what a RAG tool over user documents wants — the passage that
+     * answers the query, wherever it is in a large document.
+     */
+    suspend fun searchChunks(
+        query: String,
+        limit: Int,
+        threshold: Float,
+        config: EmbeddingModelConfig,
+        apiKey: String?,
+    ): List<DocumentChunkHit> = withContext(Dispatchers.IO) {
+        val queryVector = embed(query, config, apiKey) ?: return@withContext emptyList()
+        val effectiveThreshold = minOf(threshold, MANUAL_THRESHOLD_FLOOR)
+        val selection = selector.select(
+            queryEmbedding = queryVector,
+            threshold = effectiveThreshold,
+            limit = limit,
+        ) { afterId, pageLimit ->
+            dao.pageFor(corpus, config.id, afterId, pageLimit).map { row ->
+                EmbeddingSearchRow(
+                    id = row.id,
+                    messageId = row.docId,
+                    embedding = row.embedding,
+                    dimension = row.dimension,
+                )
+            }
+        }
+        if (selection.candidates.isEmpty()) return@withContext emptyList()
+        // Keep the winning row ids and their scores, then fetch the real chunk text by id.
+        val scoreById = LinkedHashMap<Long, Float>()
+        for (c in selection.candidates) scoreById[c.rowId] = c.score
+        val rows = dao.chunksByIds(corpus, scoreById.keys.toList()).associateBy { it.id }
+        DebugLog.d(
+            TAG,
+            "chunk search: queryDim=${queryVector.size} scanned=${selection.scannedRows} " +
+                "hits=${selection.candidates.size}",
+        )
+        scoreById.entries
+            .sortedByDescending { it.value }
+            .take(limit)
+            .mapNotNull { (id, score) ->
+                val row = rows[id] ?: return@mapNotNull null
+                DocumentChunkHit(
+                    docId = row.docId,
+                    title = row.title,
+                    chunkIndex = row.chunkIndex,
+                    text = row.chunkText,
+                    score = score,
+                )
+            }
+    }
+
+    /**
      * Semantically ranks [documents] for [query], returning the best-matching documents (deduped to
      * one hit per document, by its top chunk score). Empty if no model or no query embedding.
      */
@@ -196,20 +261,27 @@ class DocumentRagEngine(
         config: EmbeddingModelConfig,
         apiKey: String?,
     ): FloatArray? {
-        return if (config.type == EmbeddingModelType.LOCAL) {
-            if (!LlamaEngine.isModelReady(config.localFilePath)) return null
-            LlamaEngine.computeEmbedding(text, config.localFilePath)
-        } else {
-            // The key may live on the config itself (as stored in embedding_models) or be passed
-            // from the generation context; prefer the config's own key.
-            val key = config.remoteApiKey.ifBlank { apiKey.orEmpty() }
-            if (key.isBlank()) return null
-            EmbeddingClient.computeEmbedding(
-                text = text,
-                apiKey = key,
-                model = config.remoteModelName,
-                baseUrl = config.remoteBaseUrl.ifBlank { ProviderDefaults.OPENAI_BASE_URL },
-            )
+        return when (config.type) {
+            EmbeddingModelType.LOCAL_ONNX -> {
+                val ctx = appContext ?: return null
+                OnnxEmbeddingProvider.engine(ctx)?.embed(text)
+            }
+            EmbeddingModelType.LOCAL -> {
+                if (!LlamaEngine.isModelReady(config.localFilePath)) return null
+                LlamaEngine.computeEmbedding(text, config.localFilePath)
+            }
+            EmbeddingModelType.REMOTE -> {
+                // The key may live on the config itself (as stored in embedding_models) or be passed
+                // from the generation context; prefer the config's own key.
+                val key = config.remoteApiKey.ifBlank { apiKey.orEmpty() }
+                if (key.isBlank()) return null
+                EmbeddingClient.computeEmbedding(
+                    text = text,
+                    apiKey = key,
+                    model = config.remoteModelName,
+                    baseUrl = config.remoteBaseUrl.ifBlank { ProviderDefaults.OPENAI_BASE_URL },
+                )
+            }
         }
     }
 

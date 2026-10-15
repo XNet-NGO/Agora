@@ -29,7 +29,7 @@ class ManualIndexer(
     private val context: Context,
     dao: DocumentEmbeddingDao,
 ) {
-    private val engine = DocumentRagEngine(dao, ManualCorpus.CORPUS)
+    private val engine = DocumentRagEngine(dao, ManualCorpus.CORPUS, context)
     private val documents: List<CorpusDocument> by lazy { ManualCorpus.load(context) }
     private val indexMutex = Mutex()
 

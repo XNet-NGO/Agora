@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="embedding_type_onnx">На устройстве (ONNX)</string>
+    <string name="onnx_embed_title">Эмбеддинги на устройстве (ONNX)</string>
+    <string name="onnx_embed_desc">Создавайте эмбеддинги полностью на устройстве с приватной моделью ONNX (Bekko, многоязычная, 384-мерная). Без облака и ключа API. Используется для поиска по диалогам и RAG по документам.</string>
+    <string name="onnx_embed_download">Скачать модель (~124МБ)</string>
+    <string name="onnx_embed_downloading">Загрузка… %1$s</string>
+    <string name="onnx_embed_installed">Модель установлена (%1$d МБ)</string>
+    <string name="onnx_embed_add">Использовать для эмбеддингов</string>
+    <string name="onnx_embed_remove">Удалить модель</string>
+    <string name="onnx_embed_added">Добавлена как модель эмбеддингов — выберите её выше для активации.</string>
+    <string name="onnx_embed_failed">Загрузка не удалась. Проверьте соединение и повторите.</string>
+</resources>

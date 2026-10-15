@@ -86,12 +86,12 @@ while (!gen.isDone()) {
 - Replaces `LocalProvider`'s `LocalModelRuntime.runChat` / `LlamaChatEngine`. Keep the single
   process-wide resident model + FIFO admission concept from `LocalModelRuntime`.
 - `LocalChatModelConfig.localFilePath` (a GGUF file) becomes an ONNX model **directory**.
-- Bootstrap an ONNX chat model dir from XNet-NGO/deps. Target: a **Qwen 0.5B–0.9B instruct**
-  model (e.g. Qwen2.5-0.5B-Instruct, or a Qwen3 ~0.6B), built to ONNX **INT4** via the GenAI
-  model builder (`python -m onnxruntime_genai.models.builder -m Qwen/Qwen2.5-0.5B-Instruct -p int4
-  -e cpu -o <out>`). Produces a model dir with model.onnx(+.data), genai_config.json, and
-  tokenizer files (~300–500MB). Downloaded at runtime like OnnxModelBootstrap (its own tag in
-  XNet-NGO/deps, marker + size floor).
+- Bootstrap an ONNX chat model dir from XNet-NGO/deps. Target: a **Qwen3.6 instruct** model in
+  the **0.5B–0.9B** range (`qwen3.6-*`, ~0.6B), built to ONNX **INT4** via the GenAI model builder
+  (`python -m onnxruntime_genai.models.builder -m <Qwen3.6-0.6B-Instruct HF id> -p int4 -e cpu
+  -o <out>`; GenAI 0.16+ added Qwen3.6 export support). Produces a model dir with
+  model.onnx(+.data), genai_config.json, and tokenizer files (~300–500MB). Downloaded at runtime
+  like OnnxModelBootstrap (its own tag in XNet-NGO/deps, marker + size floor).
 - Deps: `implementation(files("libs/onnxruntime-genai-<v>.jar"))`; the `.so` goes in jniLibs
   (git-tracked via the .gitignore negation); reuse the single vendored `libonnxruntime.so`.
 - Verify on-device: a short local chat streams tokens, no second libonnxruntime.so / no

@@ -83,6 +83,15 @@ data class DocumentCorpusDocRow(
     val chunks: Int,
 )
 
+/** A single matched chunk (fetched by row id after semantic scoring). */
+data class DocumentChunkRow(
+    val id: Long,
+    val docId: String,
+    val title: String,
+    val chunkIndex: Int,
+    val chunkText: String,
+)
+
 /**
  * Storage + bounded keyset reads for corpus document embeddings. Reads mirror the message-corpus
  * contract: a minimal projection, strictly ordered by id, bounded by LIMIT — never a full-corpus
@@ -114,6 +123,12 @@ interface DocumentEmbeddingDao {
             "ORDER BY chunkIndex LIMIT :limit",
     )
     suspend fun chunksForDoc(corpus: String, docId: String, limit: Int): List<String>
+
+    @Query(
+        "SELECT id, docId, title, chunkIndex, chunkText FROM document_embeddings " +
+            "WHERE corpus = :corpus AND id IN (:ids)",
+    )
+    suspend fun chunksByIds(corpus: String, ids: List<Long>): List<DocumentChunkRow>
 
     @Query("SELECT COUNT(*) FROM document_embeddings WHERE corpus = :corpus AND modelId = :modelId")
     suspend fun countFor(corpus: String, modelId: String): Int

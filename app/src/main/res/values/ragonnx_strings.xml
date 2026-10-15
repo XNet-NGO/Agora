@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="embedding_type_onnx">On-device (ONNX)</string>
+    <string name="onnx_embed_title">On-device embeddings (ONNX)</string>
+    <string name="onnx_embed_desc">Run embeddings fully on your device with a private ONNX model (Bekko, multilingual, 384-dim). No cloud, no API key. Powers conversation search and document RAG.</string>
+    <string name="onnx_embed_download">Download model (~124MB)</string>
+    <string name="onnx_embed_downloading">Downloading… %1$s</string>
+    <string name="onnx_embed_installed">Model installed (%1$d MB)</string>
+    <string name="onnx_embed_add">Use for embeddings</string>
+    <string name="onnx_embed_remove">Remove model</string>
+    <string name="onnx_embed_added">Added as an embedding model — select it above to activate.</string>
+    <string name="onnx_embed_failed">Download failed. Check your connection and try again.</string>
+</resources>

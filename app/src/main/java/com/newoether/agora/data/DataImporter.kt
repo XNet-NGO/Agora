@@ -86,6 +86,9 @@ internal fun embeddingModelSemanticsChanged(
         before.remoteModelName != after.remoteModelName ||
             before.remoteBaseUrl != after.remoteBaseUrl
     EmbeddingModelType.LOCAL -> before.localFilePath != after.localFilePath
+    // ONNX uses a single fixed bundled model with no per-config fields, so only a type
+    // switch (handled above) changes its semantics.
+    EmbeddingModelType.LOCAL_ONNX -> false
 }
 
 class DataImporter(

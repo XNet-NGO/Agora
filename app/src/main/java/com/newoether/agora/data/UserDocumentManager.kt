@@ -38,7 +38,7 @@ class UserDocumentManager(
     private val context: Context,
     dao: DocumentEmbeddingDao,
 ) {
-    private val engine = DocumentRagEngine(dao, CORPUS)
+    private val engine = DocumentRagEngine(dao, CORPUS, context)
 
     suspend fun list(): List<UserDocument> =
         engine.listDocuments().map { UserDocument(it.docId, it.title, it.chunks) }
@@ -91,15 +91,15 @@ class UserDocumentManager(
         apiKey: String?,
     ): List<UserDocSearchHit> = withContext(Dispatchers.IO) {
         if (config == null || query.isBlank()) return@withContext emptyList()
-        val docs = engine.listDocuments().map {
-            CorpusDocument(docId = it.docId, title = it.title, body = "")
-        }
-        if (docs.isEmpty()) return@withContext emptyList()
-        engine.search(query, limit, threshold, config, apiKey, docs).map { hit ->
-            val snippet = engine.topChunks(hit.docId, SNIPPET_CHUNKS)
-                .joinToString("\n\n")
-                .take(SNIPPET_CHARS)
-            UserDocSearchHit(docId = hit.docId, title = hit.title, snippet = snippet, score = hit.score)
+        // Return the actual matched passages (chunk-level), not the document head — a large
+        // document's relevant lines can be anywhere, so collapsing to the first chunks hides them.
+        engine.searchChunks(query, limit, threshold, config, apiKey).map { hit ->
+            UserDocSearchHit(
+                docId = hit.docId,
+                title = hit.title,
+                snippet = hit.text.trim().take(SNIPPET_CHARS),
+                score = hit.score,
+            )
         }
     }
 
@@ -116,7 +116,6 @@ class UserDocumentManager(
     companion object {
         const val CORPUS = "user_docs"
         private const val TAG = "UserDocumentManager"
-        private const val SNIPPET_CHUNKS = 2
         private const val SNIPPET_CHARS = 2_000
     }
 }

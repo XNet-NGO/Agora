@@ -69,6 +69,7 @@ class AppContainer(
 
     init {
         LocalModelRuntime.initialize(application.applicationInfo.nativeLibraryDir)
+        com.newoether.agora.data.OnnxEmbeddingProvider.init(appContext)
     }
 
     /** App-lifetime scope that backs the shared settings StateFlows.

@@ -167,7 +167,19 @@ tasks.register<Copy>("copyPlayBundle") {
     include("*.aab")
 }
 
+// Bundle the user manual (docs/en/*.md) into app assets so the on-device `introspect` tool can
+// read and semantically search it at runtime. docs/en stays the single source of truth.
+tasks.register<Copy>("copyManualAssets") {
+    from("${rootProject.projectDir}/docs/en") {
+        include("*.md")
+    }
+    into("src/main/assets/manual")
+}
+
 afterEvaluate {
+    tasks.named("preBuild") {
+        dependsOn("copyManualAssets")
+    }
     tasks.named("assemblePlayRelease") {
         finalizedBy("copyPlayApk")
     }

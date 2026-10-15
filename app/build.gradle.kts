@@ -225,6 +225,7 @@ dependencies {
     implementation(libs.work.runtime.ktx)
     implementation(libs.jsch)
     implementation(libs.commons.compress)
+    implementation(libs.pdfbox.android)
     // WebUI server (stage 2): embedded HTTP with the pure-Kotlin CIO engine.
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.cio)

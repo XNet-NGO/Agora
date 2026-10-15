@@ -378,6 +378,7 @@ internal fun SettingsDestination(
         "search" -> SettingsSearchPage(viewModel, onBack)
         "memory" -> SettingsMemoryPage(viewModel, onBack)
         "skills" -> SettingsSkillsPage(viewModel, onBack)
+        "ragdocs" -> SettingsRagDocumentsPage(viewModel, onBack)
         "datacontrol" -> SettingsDataControlPage(viewModel, onBack)
         "appearance" -> SettingsAppearancePage(viewModel, onBack)
         "developer" -> SettingsDeveloperPage(viewModel, onBack, onDisabled = onBack)

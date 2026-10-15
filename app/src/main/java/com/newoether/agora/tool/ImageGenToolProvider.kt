@@ -47,7 +47,11 @@ class ImageGenToolProvider(
                     properties = mapOf(
                         "prompt" to ToolProperty("string", "A detailed description of the image to generate. For image-to-image edits, describe the change to make to the reference images."),
                         "size" to ToolProperty("string", "Optional image size, e.g. 1024x1024, 1024x1536, or 1536x1024."),
-                        "image_paths" to ToolProperty("array", "Optional file paths of reference images (up to 3) for image-to-image generation, e.g. paths returned by earlier generate_image calls."),
+                        "image_paths" to ToolProperty(
+                            "array",
+                            "Optional file paths of reference images (up to 3) for image-to-image generation, e.g. paths returned by earlier generate_image calls.",
+                            items = ToolProperty("string", "A reference image file path."),
+                        ),
                     ),
                     required = listOf("prompt")
                 )

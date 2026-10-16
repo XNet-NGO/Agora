@@ -43,7 +43,7 @@ android {
             cmake {
                 cppFlags += "-std=c++17"
                 arguments += listOf("-DANDROID_STL=c++_shared")
-                targets += listOf("agora_llama", "agora_proot")
+                targets += listOf("agora_proot")
             }
         }
     }
@@ -251,6 +251,10 @@ dependencies {
     // HuggingFace tokenizer (tokenizer.json); its Android native libs come from
     // tokenizer-native (desktop copies are excluded in packaging).
     implementation(files("libs/onnxruntime-1.28.2.jar"))
+    // onnxruntime-genai 0.17.0 (on-device LLM chat). The Java API jar; its native libs
+    // (libonnxruntime-genai*.so, libmat.so) are in jniLibs and dlopen the vendored ORT 1.28.2
+    // via OrtGetApiBase (stable C ABI) — no second libonnxruntime.so.
+    implementation(files("libs/onnxruntime-genai-0.17.0.jar"))
     implementation(libs.djl.tokenizers) {
         exclude(group = "ai.djl.huggingface", module = "tokenizers-native")
     }

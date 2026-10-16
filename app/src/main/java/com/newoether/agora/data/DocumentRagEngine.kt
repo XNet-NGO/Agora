@@ -1,7 +1,6 @@
 package com.newoether.agora.data
 
 import com.newoether.agora.api.EmbeddingClient
-import com.newoether.agora.api.LlamaEngine
 import com.newoether.agora.api.ProviderDefaults
 import com.newoether.agora.data.local.DocumentEmbeddingDao
 import com.newoether.agora.data.local.DocumentCorpusDocRow
@@ -32,7 +31,7 @@ data class DocumentChunkHit(
 /**
  * Generic semantic store for a document corpus (e.g. the bundled manual), isolated from the
  * conversation message corpus. Reuses the exact embedding generation ([EmbeddingClient] /
- * [LlamaEngine]), byte encoding ([EmbeddingIndexer]) and bounded ranking
+ * OnnxEmbeddingProvider), byte encoding ([EmbeddingIndexer]) and bounded ranking
  * ([BoundedSemanticEmbeddingSelector]) that conversation RAG uses — only the storage table differs.
  *
  * All methods are no-ops / empty when no embedding model is configured; the caller supplies a
@@ -265,10 +264,6 @@ class DocumentRagEngine(
             EmbeddingModelType.LOCAL_ONNX -> {
                 val ctx = appContext ?: return null
                 OnnxEmbeddingProvider.engine(ctx)?.embed(text)
-            }
-            EmbeddingModelType.LOCAL -> {
-                if (!LlamaEngine.isModelReady(config.localFilePath)) return null
-                LlamaEngine.computeEmbedding(text, config.localFilePath)
             }
             EmbeddingModelType.REMOTE -> {
                 // The key may live on the config itself (as stored in embedding_models) or be passed

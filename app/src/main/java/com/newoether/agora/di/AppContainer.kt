@@ -196,11 +196,19 @@ class AppContainer(
 
     val localProvider: LocalProvider by lazy { LocalProvider(appContext, settingsRepository) }
 
+    /**
+     * On-device chat provider: serves the ONNX genai model, delegating other (GGUF) local model
+     * ids to [localProvider] during the llama->ONNX transition. Registered as PROVIDER_LOCAL.
+     */
+    val onnxLlmProvider: com.newoether.agora.api.local.OnnxLlmProvider by lazy {
+        com.newoether.agora.api.local.OnnxLlmProvider(appContext, localProvider)
+    }
+
     val providerRegistry: ProviderRegistry by lazy {
         ProviderRegistry(
             settingsRepository,
             conversationRepository,
-            localProvider,
+            onnxLlmProvider,
             appScope,
             currentAppVersion(),
         )

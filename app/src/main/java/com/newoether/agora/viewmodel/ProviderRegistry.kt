@@ -129,7 +129,7 @@ internal fun providerConfigurationIsValid(
 class ProviderRegistry(
     private val settings: SettingsRepository,
     private val conversations: ConversationRepository,
-    localProvider: LocalProvider,
+    localProvider: LlmProvider,
     private val scope: CoroutineScope,
     appVersion: String = "?",
 ) {

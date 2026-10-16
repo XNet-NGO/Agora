@@ -10,4 +10,13 @@
     <string name="onnx_embed_remove">إزالة النموذج</string>
     <string name="onnx_embed_added">تمت الإضافة كنموذج تضمين — اختره بالأعلى للتفعيل.</string>
     <string name="onnx_embed_failed">فشل التنزيل. تحقق من اتصالك وحاول مرة أخرى.</string>
+    <string name="onnx_chat_title">محادثة على الجهاز (ONNX)</string>
+    <string name="onnx_chat_desc">شغّل نموذج LLM صغير بالكامل على جهازك (Qwen3 0.6B عبر ONNX Runtime). بدون سحابة أو مفتاح API.</string>
+    <string name="onnx_chat_download">تنزيل النموذج (~487 ميجابايت)</string>
+    <string name="onnx_chat_downloading">جارٍ التنزيل… %1$s</string>
+    <string name="onnx_chat_installed">تم تثبيت النموذج (%1$d ميجابايت)</string>
+    <string name="onnx_chat_add">إضافة كنموذج محلي</string>
+    <string name="onnx_chat_remove">إزالة النموذج</string>
+    <string name="onnx_chat_added">تمت الإضافة — اختر “Qwen3 0.6B (on-device)”.</string>
+    <string name="onnx_chat_failed">فشل التنزيل. تحقق من الاتصال.</string>
 </resources>

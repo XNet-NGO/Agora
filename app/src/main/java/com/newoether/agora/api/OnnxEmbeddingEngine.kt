@@ -31,6 +31,8 @@ class OnnxEmbeddingEngine(
     companion object {
         private const val TAG = "OnnxEmbeddingEngine"
         const val EMBED_DIM = 384
+        /** Char cap before tokenizing (well within the 8192-token truncation budget). */
+        private const val MAX_INPUT_CHARS = 16_000
         private const val IN_IDS = "input_ids"
         private const val IN_MASK = "attention_mask"
         private const val OUT_HIDDEN = "last_hidden_state"
@@ -82,15 +84,27 @@ class OnnxEmbeddingEngine(
     /**
      * Embed a single text into a 384-dim, L2-normalized vector.
      * Returns null on any failure (missing files, init error, runtime error).
+     *
+     * Synchronized: the DJL tokenizer and ORT session native handles are NOT thread-safe. The
+     * engine is a process-wide singleton shared by the conversation-index worker, the RAG query
+     * path, and document import; concurrent calls crash the native tokenizer (getTokenCharSpans).
      */
+    @Synchronized
     fun embed(text: String): FloatArray? {
         if (!ensureInit()) return null
         val s = session ?: return null
         val e = env ?: return null
         val tok = tokenizer ?: return null
 
+        // Defensive input guard: a blank string, or a pathologically long one, can trip the DJL
+        // native tokenizer's offset mapping (getTokenCharSpans) into a native abort that cannot be
+        // caught. Truncation is configured, but hard-cap the char length here as defense-in-depth.
+        val input = text.trim()
+        if (input.isEmpty()) return null
+        val capped = if (input.length > MAX_INPUT_CHARS) input.substring(0, MAX_INPUT_CHARS) else input
+
         return try {
-            val enc = tok.encode(text)
+            val enc = tok.encode(capped)
             val ids = enc.ids                 // long[]
             val mask = enc.attentionMask      // long[]
             val seq = ids.size

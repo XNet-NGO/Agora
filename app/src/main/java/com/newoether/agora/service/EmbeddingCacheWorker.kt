@@ -11,7 +11,6 @@ import androidx.work.await
 import androidx.work.workDataOf
 import com.newoether.agora.AgoraApplication
 import com.newoether.agora.api.EmbeddingClient
-import com.newoether.agora.api.LlamaEngine
 import com.newoether.agora.api.ProviderDefaults
 import com.newoether.agora.data.EmbeddingIndexer
 import com.newoether.agora.data.EmbeddingModelConfig
@@ -318,7 +317,6 @@ class EmbeddingCacheWorker(
                 val engine = OnnxEmbeddingProvider.engine(applicationContext)
                 if (engine == null) texts.map { null } else texts.map { engine.embed(it) }
             }
-            EmbeddingModelType.LOCAL -> LlamaEngine.computeEmbeddings(texts, model.localFilePath)
             EmbeddingModelType.REMOTE -> {
                 val (apiKey, baseUrl) = requireNotNull(remoteConfig)
                 EmbeddingClient.computeEmbeddings(
@@ -382,10 +380,6 @@ class EmbeddingCacheWorker(
     ): Pair<String, String>? {
         if (model.type == EmbeddingModelType.LOCAL_ONNX) {
             check(OnnxEmbeddingProvider.isReady(applicationContext)) { "ONNX embedding model not installed" }
-            return null
-        }
-        if (model.type == EmbeddingModelType.LOCAL) {
-            check(LlamaEngine.isModelReady(model.localFilePath)) { "Local model file not found" }
             return null
         }
         val apiKey = model.remoteApiKey.ifBlank { resolveApiKey(settingsManager) ?: "" }

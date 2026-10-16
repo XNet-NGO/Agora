@@ -43,7 +43,7 @@ android {
             cmake {
                 cppFlags += "-std=c++17"
                 arguments += listOf("-DANDROID_STL=c++_shared")
-                targets += listOf("agora_llama", "agora_proot")
+                targets += listOf("agora_proot")
             }
         }
     }

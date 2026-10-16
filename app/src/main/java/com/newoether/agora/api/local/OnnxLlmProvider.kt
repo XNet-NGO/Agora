@@ -25,8 +25,6 @@ import kotlin.coroutines.coroutineContext
  */
 class OnnxLlmProvider(
     private val context: Context,
-    /** GGUF fallback during the llama->ONNX transition; delegated to for non-ONNX model ids. */
-    private val ggufDelegate: LlmProvider? = null,
 ) : LlmProvider {
 
     override val name: String = Constants.PROVIDER_LOCAL
@@ -36,18 +34,7 @@ class OnnxLlmProvider(
     override fun generateResponse(
         messages: List<ChatMessage>,
         config: ProviderConfig,
-    ): Flow<StreamEvent> {
-        // Only the ONNX chat model id is served by genai; any other local (GGUF) model id is
-        // delegated to the legacy provider. Phase 3 removes the delegate once GGUF chat is gone.
-        if (config.modelId != OnnxChatModelBootstrap.MODEL_ID) {
-            val delegate = ggufDelegate
-            if (delegate != null) return delegate.generateResponse(messages, config)
-            return flow {
-                emit(StreamEvent.Error(GenerationError.LocalModel("Unknown local model: ${config.modelId}")))
-            }
-        }
-        return generateOnnx(messages, config)
-    }
+    ): Flow<StreamEvent> = generateOnnx(messages, config)
 
     private fun generateOnnx(
         messages: List<ChatMessage>,
@@ -89,11 +76,8 @@ class OnnxLlmProvider(
         }
     }.flowOn(Dispatchers.Default)
 
-    override suspend fun fetchModels(apiKey: String, baseUrl: String?): List<String> {
-        val onnx = if (OnnxChatModelBootstrap.isInstalled(context)) listOf(OnnxChatModelBootstrap.MODEL_ID) else emptyList()
-        val gguf = ggufDelegate?.fetchModels(apiKey, baseUrl).orEmpty()
-        return onnx + gguf
-    }
+    override suspend fun fetchModels(apiKey: String, baseUrl: String?): List<String> =
+        if (OnnxChatModelBootstrap.isInstalled(context)) listOf(OnnxChatModelBootstrap.MODEL_ID) else emptyList()
 
     private fun buildChatMlPrompt(messages: List<ChatMessage>, systemPrompt: String?): String {
         // Qwen3 uses ChatML. The genai model has no embedded chat_template, so build it directly.

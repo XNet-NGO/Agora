@@ -3,7 +3,7 @@ package com.newoether.agora.viewmodel
 import android.app.Application
 import android.content.Context
 import com.newoether.agora.R
-import com.newoether.agora.api.local.LocalProvider
+import com.newoether.agora.api.LlmProvider
 import com.newoether.agora.automation.ConversationExecutionCoordinator
 import com.newoether.agora.automation.LoopManager
 import com.newoether.agora.automation.TaskExecutionEngine
@@ -52,7 +52,7 @@ class ChatRuntime(
     shellConfirmation: ShellConfirmationController,
     registry: ConversationStateRegistry,
     providerRegistry: ProviderRegistry,
-    localProvider: LocalProvider,
+    localProvider: LlmProvider,
     executionCoordinator: ConversationExecutionCoordinator,
     loopManager: LoopManager,
     taskExecutionEngine: TaskExecutionEngine,

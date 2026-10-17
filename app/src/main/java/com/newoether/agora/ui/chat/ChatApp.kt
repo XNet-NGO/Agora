@@ -118,6 +118,7 @@ fun ChatApp(
     val debugModelEnabled by viewModel.settings.debugModelEnabled.collectAsState()
     val modelAliases by viewModel.settings.modelAliases.collectAsState()
     val modelProviderNames by viewModel.settings.modelProviderNames.collectAsState()
+    val chatBackgroundSpec by viewModel.settings.chatBackground.collectAsState()
     val chatEnabledModels = validChatModels(
         enabledModels,
         developerOptionsEnabled,
@@ -376,6 +377,7 @@ fun ChatApp(
                 .clearFocusOnTap()
                 .onSizeChanged { scrollCoordinator.recordViewportHeight(it.height) }
         ) {
+            ChatBackgroundLayer(chatBackgroundSpec)
             val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
             val (targetCa, targetQa) = if (!dark) {
                 0.00f to 0.00f

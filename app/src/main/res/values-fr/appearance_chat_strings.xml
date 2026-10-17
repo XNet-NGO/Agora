@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="appearance_chat_section">Apparence du chat</string>
+    <string name="appearance_bubble_color">Couleur de votre bulle de message</string>
+    <string name="appearance_chat_background">Arrière-plan du chat</string>
+    <string name="appearance_bg_pick_image">Choisir une image…</string>
+    <string name="appearance_bg_image_set">Image définie — appuyez pour changer</string>
+</resources>

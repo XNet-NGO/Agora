@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="appearance_chat_section">مظهر المحادثة</string>
+    <string name="appearance_bubble_color">لون فقاعة رسالتك</string>
+    <string name="appearance_chat_background">خلفية المحادثة</string>
+    <string name="appearance_bg_pick_image">اختر صورة…</string>
+    <string name="appearance_bg_image_set">تم تعيين صورة — انقر للتغيير</string>
+</resources>

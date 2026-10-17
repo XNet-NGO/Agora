@@ -104,7 +104,11 @@ class OnnxEmbeddingEngine(
         val capped = if (input.length > MAX_INPUT_CHARS) input.substring(0, MAX_INPUT_CHARS) else input
 
         return try {
-            val enc = tok.encode(capped)
+            // DJL's encode(text) computes char-span offsets via a native getTokenCharSpans call
+            // that aborts (SIGABRT) on some truncated/multilingual inputs with this tokenizer. We
+            // only need token ids + mask, so encode WITHOUT char spans: encode(text, addSpecial,
+            // withCharSpans=false). This is the actual fix for the EmbeddingCacheWorker crash loop.
+            val enc = tok.encode(capped, true, false)
             val ids = enc.ids                 // long[]
             val mask = enc.attentionMask      // long[]
             val seq = ids.size

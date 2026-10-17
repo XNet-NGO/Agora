@@ -13,14 +13,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -42,17 +47,24 @@ private val SWATCHES = listOf(
     "#EF6C00", "#00838F", "#455A64", "#37474F", "#5D4037",
 )
 
-/** Copy a picked image Uri into app-private storage; returns the stable absolute path or null. */
-fun copyChatBackgroundImage(viewModel: ChatViewModel, uri: Uri): String? = try {
+/**
+ * Copy a picked image/video Uri into app-private storage; returns the chat-background spec
+ * ("image:<path>" or "video:<path>") or null on failure. Type is detected from the content mime.
+ */
+fun copyChatBackgroundMedia(viewModel: ChatViewModel, uri: Uri): String? = try {
     val ctx = viewModel.getApplication<android.app.Application>()
+    val isVideo = ctx.contentResolver.getType(uri)?.startsWith("video") == true
     val dir = java.io.File(ctx.filesDir, "appearance").apply { mkdirs() }
-    // Unique filename per pick so Coil's disk/memory cache can't serve a stale image; prune olds.
+    // Unique filename per pick so Coil/ExoPlayer can't serve a stale file; prune olds first.
     dir.listFiles { f -> f.name.startsWith("chat_background") }?.forEach { it.delete() }
-    val dest = java.io.File(dir, "chat_background_${System.currentTimeMillis()}.img")
+    val ext = if (isVideo) "mp4" else "img"
+    val dest = java.io.File(dir, "chat_background_${System.currentTimeMillis()}.$ext")
     ctx.contentResolver.openInputStream(uri)?.use { input ->
         dest.outputStream().use { input.copyTo(it) }
     }
-    if (dest.isFile && dest.length() > 0) dest.absolutePath else null
+    if (dest.isFile && dest.length() > 0) {
+        (if (isVideo) "video:" else "image:") + dest.absolutePath
+    } else null
 } catch (_: Exception) {
     null
 }
@@ -66,13 +78,12 @@ fun SettingsChatAppearanceSection(viewModel: ChatViewModel) {
     val bubble by viewModel.settings.userBubbleColor.collectAsState()
     val background by viewModel.settings.chatBackground.collectAsState()
 
-    val imagePicker = rememberLauncherForActivityResult(
+    val mediaPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri: Uri? ->
         if (uri != null) {
-            // Persist read access + copy into app storage so the path stays valid.
-            val path = com.newoether.agora.ui.settings.copyChatBackgroundImage(viewModel, uri)
-            if (path != null) viewModel.settings.setChatBackground("image:$path")
+            val spec = copyChatBackgroundMedia(viewModel, uri)
+            if (spec != null) viewModel.settings.setChatBackground(spec)
         }
     }
 
@@ -99,21 +110,64 @@ fun SettingsChatAppearanceSection(viewModel: ChatViewModel) {
                         onPick = { hex -> viewModel.settings.setChatBackground("color:$hex") },
                         onClear = { viewModel.settings.setChatBackground("") },
                     )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = if (background.startsWith("image:")) stringResource(R.string.appearance_bg_image_set)
-                            else stringResource(R.string.appearance_bg_pick_image),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .clickable { imagePicker.launch(arrayOf("image/*")) }
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                    )
+                    Spacer(Modifier.height(12.dp))
+                    // Prominent, hard-to-miss media picker (image OR video).
+                    val hasMedia = background.startsWith("image:") || background.startsWith("video:")
+                    OutlinedButton(
+                        onClick = { mediaPicker.launch(arrayOf("image/*", "video/*")) },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                    ) {
+                        Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = if (hasMedia) stringResource(R.string.appearance_bg_change_media)
+                                else stringResource(R.string.appearance_bg_pick_media),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                    }
+                    if (hasMedia) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = stringResource(R.string.appearance_bg_clear),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.clip(CircleShape)
+                                .clickable { viewModel.settings.setChatBackground("") }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        )
+                        BackgroundMediaConfig(viewModel, isVideo = background.startsWith("video:"))
+                    }
                 }
             }
         },
     )
+}
+
+@Composable
+private fun BackgroundMediaConfig(viewModel: ChatViewModel, isVideo: Boolean) {
+    val opacity by viewModel.settings.chatBackgroundOpacity.collectAsState()
+    val muted by viewModel.settings.chatBackgroundVideoMuted.collectAsState()
+    val loop by viewModel.settings.chatBackgroundVideoLoop.collectAsState()
+    Spacer(Modifier.height(8.dp))
+    Text(
+        stringResource(R.string.appearance_bg_opacity, (opacity * 100).toInt()),
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    Slider(
+        value = opacity,
+        onValueChange = { viewModel.settings.setChatBackgroundOpacity(it) },
+        valueRange = 0.05f..1f,
+    )
+    if (isVideo) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.appearance_bg_video_muted), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Switch(checked = muted, onCheckedChange = { viewModel.settings.setChatBackgroundVideoMuted(it) })
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.appearance_bg_video_loop), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Switch(checked = loop, onCheckedChange = { viewModel.settings.setChatBackgroundVideoLoop(it) })
+        }
+    }
 }
 
 @Composable

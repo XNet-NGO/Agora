@@ -13,15 +13,18 @@ sealed interface ChatBackground {
     data object Default : ChatBackground
     data class SolidColor(val color: Color) : ChatBackground
     data class Image(val path: String) : ChatBackground
+    data class Video(val path: String) : ChatBackground
 }
 
-/** Parse "" / "none" / "color:#RRGGBB" / "image:<path>" into a [ChatBackground]. */
+/** Parse "" / "none" / "color:#RRGGBB" / "image:<path>" / "video:<path>" into a [ChatBackground]. */
 fun parseChatBackground(spec: String): ChatBackground = when {
     spec.isBlank() || spec == "none" -> ChatBackground.Default
     spec.startsWith("color:") -> parseHexColor(spec.removePrefix("color:"))
         ?.let { ChatBackground.SolidColor(it) } ?: ChatBackground.Default
     spec.startsWith("image:") -> spec.removePrefix("image:").takeIf { it.isNotBlank() }
         ?.let { ChatBackground.Image(it) } ?: ChatBackground.Default
+    spec.startsWith("video:") -> spec.removePrefix("video:").takeIf { it.isNotBlank() }
+        ?.let { ChatBackground.Video(it) } ?: ChatBackground.Default
     else -> ChatBackground.Default
 }
 

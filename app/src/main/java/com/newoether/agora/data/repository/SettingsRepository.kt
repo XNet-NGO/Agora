@@ -235,14 +235,13 @@ class SettingsRepository(
     val fontPreference: StateFlow<String> = hot(settingsManager.fontPreference, "app_default")
     val customFontPath: StateFlow<String> = hot(settingsManager.customFontPath, "")
     val customFontName: StateFlow<String> = hot(settingsManager.customFontName, "")
+    val userBubbleColor: StateFlow<String> = hot(settingsManager.userBubbleColor, "")
+    val chatBackground: StateFlow<String> = hot(settingsManager.chatBackground, "")
     val searchContextWindow: StateFlow<Int> = hot(settingsManager.searchContextWindow, 8)
     val searchMatchLimit: StateFlow<Int> = hot(settingsManager.searchMatchLimit, 10)
     val ragThreshold: StateFlow<Float> = hot(settingsManager.ragThreshold, 0.5f)
     val localChatModels: StateFlow<List<LocalChatModelConfig>> = hot(settingsManager.localChatModels, emptyList())
-    val localModelIdleRetentionMinutes: StateFlow<Int> = hot(
-        settingsManager.localModelIdleRetentionMinutes,
-        DEFAULT_LOCAL_MODEL_IDLE_RETENTION_MINUTES,
-    )
+    val localModelIdleRetentionMinutes: StateFlow<Int> = hot(settingsManager.localModelIdleRetentionMinutes, DEFAULT_LOCAL_MODEL_IDLE_RETENTION_MINUTES)
     val localLowContextModeEnabled: StateFlow<Boolean> = hot(
         settingsManager.localLowContextModeEnabled,
         DEFAULT_LOCAL_LOW_CONTEXT_MODE_ENABLED,
@@ -699,6 +698,8 @@ class SettingsRepository(
     fun setFontPreference(value: String) = scope.launch { settingsManager.saveFontPreference(value) }
     fun setCustomFontPath(value: String) = scope.launch { settingsManager.saveCustomFontPath(value) }
     fun setCustomFontName(value: String) = scope.launch { settingsManager.saveCustomFontName(value) }
+    fun setUserBubbleColor(value: String) = scope.launch { settingsManager.saveUserBubbleColor(value) }
+    fun setChatBackground(value: String) = scope.launch { settingsManager.saveChatBackground(value) }
     fun setSearchMatchLimit(n: Int) = scope.launch { settingsManager.saveSearchMatchLimit(n) }
     fun setSearchContextWindow(n: Int) = scope.launch { settingsManager.saveSearchContextWindow(n) }
     fun setRagThreshold(threshold: Float) = scope.launch { settingsManager.saveRagThreshold(threshold) }

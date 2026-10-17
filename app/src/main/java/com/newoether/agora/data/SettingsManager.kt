@@ -237,6 +237,8 @@ class SettingsManager(private val context: Context) {
     val fontPreference: Flow<String> = context.dataStore.data.map { it[FONT_PREFERENCE] ?: "app_default" }
     val customFontPath: Flow<String> = context.dataStore.data.map { it[CUSTOM_FONT_PATH] ?: "" }
     val customFontName: Flow<String> = context.dataStore.data.map { it[CUSTOM_FONT_NAME] ?: "" }
+    val userBubbleColor: Flow<String> = context.dataStore.data.map { it[USER_BUBBLE_COLOR] ?: "" }
+    val chatBackground: Flow<String> = context.dataStore.data.map { it[CHAT_BACKGROUND] ?: "" }
     val firstLaunchTime: Flow<Long?> = context.dataStore.data.map { it[FIRST_LAUNCH_TIME] }
     val onboardingCompleted: Flow<Boolean> = context.dataStore.data.map { it[ONBOARDING_COMPLETED] ?: false }
     val ratingPromptSubmitted: Flow<Boolean> = context.dataStore.data.map { it[RATING_PROMPT_SUBMITTED] ?: false }
@@ -705,6 +707,12 @@ class SettingsManager(private val context: Context) {
     }
     suspend fun saveCustomFontName(value: String) {
         context.dataStore.edit { it[CUSTOM_FONT_NAME] = value }
+    }
+    suspend fun saveUserBubbleColor(value: String) {
+        context.dataStore.edit { it[USER_BUBBLE_COLOR] = value }
+    }
+    suspend fun saveChatBackground(value: String) {
+        context.dataStore.edit { it[CHAT_BACKGROUND] = value }
     }
     suspend fun saveSchemeStyle(style: String) {
         context.dataStore.edit { it[SCHEME_STYLE] = style }

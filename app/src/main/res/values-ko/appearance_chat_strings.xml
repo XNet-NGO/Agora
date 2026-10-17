@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="appearance_chat_section">채팅 모양</string>
+    <string name="appearance_bubble_color">내 메시지 말풍선 색</string>
+    <string name="appearance_chat_background">채팅 배경</string>
+    <string name="appearance_bg_pick_image">이미지 선택…</string>
+    <string name="appearance_bg_image_set">이미지 설정됨 — 탭하여 변경</string>
+</resources>

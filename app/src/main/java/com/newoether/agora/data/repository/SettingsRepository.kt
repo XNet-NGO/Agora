@@ -120,22 +120,13 @@ class SettingsRepository(
     val maxContextWindow: StateFlow<Int> =
         hot(settingsManager.maxContextWindow, ContextBudget.DEFAULT_TOKENS)
     val visualizeContextRollout: StateFlow<Boolean> = hot(settingsManager.visualizeContextRollout, false)
-    val contextCompactEnabled: StateFlow<Boolean> = hot(
-        settingsManager.contextCompactEnabled,
-        DEFAULT_CONTEXT_COMPACT_ENABLED,
-    )
+    val contextCompactEnabled: StateFlow<Boolean> = hot(settingsManager.contextCompactEnabled, DEFAULT_CONTEXT_COMPACT_ENABLED)
     val contextCompactModel: StateFlow<String?> = hot(settingsManager.contextCompactModel, null)
     val contextCompactPrompt: StateFlow<String> = hot(settingsManager.contextCompactPrompt, BuiltInPrompts.CONTEXT_COMPACT_SYSTEM)
-    val contextCompactRetainCount: StateFlow<Int> = hot(
-        settingsManager.contextCompactRetainCount,
-        DEFAULT_CONTEXT_COMPACT_RETAIN_COUNT,
-    )
+    val contextCompactRetainCount: StateFlow<Int> = hot(settingsManager.contextCompactRetainCount, DEFAULT_CONTEXT_COMPACT_RETAIN_COUNT)
     val contextCompactPreserveSystemPrompt: StateFlow<Boolean> =
         hot(settingsManager.contextCompactPreserveSystemPrompt, DEFAULT_CONTEXT_COMPACT_PRESERVE_SYSTEM_PROMPT)
-    val contextCompactThresholdPercent: StateFlow<Int> = hot(
-        settingsManager.contextCompactThresholdPercent,
-        DEFAULT_CONTEXT_COMPACT_THRESHOLD_PERCENT,
-    )
+    val contextCompactThresholdPercent: StateFlow<Int> = hot(settingsManager.contextCompactThresholdPercent, DEFAULT_CONTEXT_COMPACT_THRESHOLD_PERCENT)
     val codeExecutionEnabled: StateFlow<Boolean> = hot(settingsManager.codeExecutionEnabled, false)
     val googleSearchEnabled: StateFlow<Boolean> = hot(settingsManager.googleSearchEnabled, false)
     val thinkingEnabled: StateFlow<Boolean> = hot(settingsManager.thinkingEnabled, true)
@@ -235,14 +226,16 @@ class SettingsRepository(
     val fontPreference: StateFlow<String> = hot(settingsManager.fontPreference, "app_default")
     val customFontPath: StateFlow<String> = hot(settingsManager.customFontPath, "")
     val customFontName: StateFlow<String> = hot(settingsManager.customFontName, "")
+    val userBubbleColor: StateFlow<String> = hot(settingsManager.userBubbleColor, "")
+    val chatBackground: StateFlow<String> = hot(settingsManager.chatBackground, "")
+    val chatBackgroundOpacity: StateFlow<Float> = hot(settingsManager.chatBackgroundOpacity, 0.3f)
+    val chatBackgroundVideoMuted: StateFlow<Boolean> = hot(settingsManager.chatBackgroundVideoMuted, true)
+    val chatBackgroundVideoLoop: StateFlow<Boolean> = hot(settingsManager.chatBackgroundVideoLoop, true)
     val searchContextWindow: StateFlow<Int> = hot(settingsManager.searchContextWindow, 8)
     val searchMatchLimit: StateFlow<Int> = hot(settingsManager.searchMatchLimit, 10)
     val ragThreshold: StateFlow<Float> = hot(settingsManager.ragThreshold, 0.5f)
     val localChatModels: StateFlow<List<LocalChatModelConfig>> = hot(settingsManager.localChatModels, emptyList())
-    val localModelIdleRetentionMinutes: StateFlow<Int> = hot(
-        settingsManager.localModelIdleRetentionMinutes,
-        DEFAULT_LOCAL_MODEL_IDLE_RETENTION_MINUTES,
-    )
+    val localModelIdleRetentionMinutes: StateFlow<Int> = hot(settingsManager.localModelIdleRetentionMinutes, DEFAULT_LOCAL_MODEL_IDLE_RETENTION_MINUTES)
     val localLowContextModeEnabled: StateFlow<Boolean> = hot(
         settingsManager.localLowContextModeEnabled,
         DEFAULT_LOCAL_LOW_CONTEXT_MODE_ENABLED,
@@ -699,6 +692,11 @@ class SettingsRepository(
     fun setFontPreference(value: String) = scope.launch { settingsManager.saveFontPreference(value) }
     fun setCustomFontPath(value: String) = scope.launch { settingsManager.saveCustomFontPath(value) }
     fun setCustomFontName(value: String) = scope.launch { settingsManager.saveCustomFontName(value) }
+    fun setUserBubbleColor(value: String) = scope.launch { settingsManager.saveUserBubbleColor(value) }
+    fun setChatBackground(value: String) = scope.launch { settingsManager.saveChatBackground(value) }
+    fun setChatBackgroundOpacity(v: Float) = scope.launch { settingsManager.saveChatBackgroundOpacity(v) }
+    fun setChatBackgroundVideoMuted(v: Boolean) = scope.launch { settingsManager.saveChatBackgroundVideoMuted(v) }
+    fun setChatBackgroundVideoLoop(v: Boolean) = scope.launch { settingsManager.saveChatBackgroundVideoLoop(v) }
     fun setSearchMatchLimit(n: Int) = scope.launch { settingsManager.saveSearchMatchLimit(n) }
     fun setSearchContextWindow(n: Int) = scope.launch { settingsManager.saveSearchContextWindow(n) }
     fun setRagThreshold(threshold: Float) = scope.launch { settingsManager.saveRagThreshold(threshold) }

@@ -237,6 +237,11 @@ class SettingsManager(private val context: Context) {
     val fontPreference: Flow<String> = context.dataStore.data.map { it[FONT_PREFERENCE] ?: "app_default" }
     val customFontPath: Flow<String> = context.dataStore.data.map { it[CUSTOM_FONT_PATH] ?: "" }
     val customFontName: Flow<String> = context.dataStore.data.map { it[CUSTOM_FONT_NAME] ?: "" }
+    val userBubbleColor: Flow<String> = context.dataStore.data.map { it[USER_BUBBLE_COLOR] ?: "" }
+    val chatBackground: Flow<String> = context.dataStore.data.map { it[CHAT_BACKGROUND] ?: "" }
+    val chatBackgroundOpacity: Flow<Float> = context.dataStore.data.map { it[CHAT_BACKGROUND_OPACITY] ?: 0.3f }
+    val chatBackgroundVideoMuted: Flow<Boolean> = context.dataStore.data.map { it[CHAT_BACKGROUND_VIDEO_MUTED] ?: true }
+    val chatBackgroundVideoLoop: Flow<Boolean> = context.dataStore.data.map { it[CHAT_BACKGROUND_VIDEO_LOOP] ?: true }
     val firstLaunchTime: Flow<Long?> = context.dataStore.data.map { it[FIRST_LAUNCH_TIME] }
     val onboardingCompleted: Flow<Boolean> = context.dataStore.data.map { it[ONBOARDING_COMPLETED] ?: false }
     val ratingPromptSubmitted: Flow<Boolean> = context.dataStore.data.map { it[RATING_PROMPT_SUBMITTED] ?: false }
@@ -705,6 +710,21 @@ class SettingsManager(private val context: Context) {
     }
     suspend fun saveCustomFontName(value: String) {
         context.dataStore.edit { it[CUSTOM_FONT_NAME] = value }
+    }
+    suspend fun saveUserBubbleColor(value: String) {
+        context.dataStore.edit { it[USER_BUBBLE_COLOR] = value }
+    }
+    suspend fun saveChatBackground(value: String) {
+        context.dataStore.edit { it[CHAT_BACKGROUND] = value }
+    }
+    suspend fun saveChatBackgroundOpacity(value: Float) {
+        context.dataStore.edit { it[CHAT_BACKGROUND_OPACITY] = value }
+    }
+    suspend fun saveChatBackgroundVideoMuted(value: Boolean) {
+        context.dataStore.edit { it[CHAT_BACKGROUND_VIDEO_MUTED] = value }
+    }
+    suspend fun saveChatBackgroundVideoLoop(value: Boolean) {
+        context.dataStore.edit { it[CHAT_BACKGROUND_VIDEO_LOOP] = value }
     }
     suspend fun saveSchemeStyle(style: String) {
         context.dataStore.edit { it[SCHEME_STYLE] = style }

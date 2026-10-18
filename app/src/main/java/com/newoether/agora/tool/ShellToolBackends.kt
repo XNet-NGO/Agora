@@ -52,7 +52,9 @@ internal sealed interface Backend {
 }
 
 internal class ConchBackend(override val device: ShellDeviceConfig) : Backend {
-    private val url = device.serverUrl.trimEnd('/')
+    // Sanitize: a saved URL can contain a stray newline + extra text; keep only the first
+    // whitespace-delimited token so request paths and error messages use a clean base.
+    private val url = com.newoether.agora.util.sanitizeConchServerUrl(device.serverUrl)
     private val apiKey = device.apiKey
     private val pubKey = device.conchPublicKey
     private val deviceName = device.name

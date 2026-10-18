@@ -1,6 +1,5 @@
 package com.newoether.agora.api
 
-import ai.djl.huggingface.tokenizers.HuggingFaceTokenizer
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
@@ -40,7 +39,7 @@ class OnnxEmbeddingEngine(
 
     @Volatile private var env: OrtEnvironment? = null
     @Volatile private var session: OrtSession? = null
-    @Volatile private var tokenizer: HuggingFaceTokenizer? = null
+    @Volatile private var tokenizer: BpeTokenizer? = null
     @Volatile private var initFailed = false
 
     /** Whether the required files are present on disk. */
@@ -63,12 +62,13 @@ class OnnxEmbeddingEngine(
                 setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
             }
             val s = e.createSession(modelFile.absolutePath, opts)
-            val t = HuggingFaceTokenizer.builder()
-                .optTokenizerPath(tokenizerFile.toPath())
-                .optAddSpecialTokens(true)
-                .optTruncation(true)
-                .optMaxLength(maxSeqLen)
-                .build()
+            val t = BpeTokenizer.load(tokenizerFile, maxSeqLen)
+                ?: run {
+                    DebugLog.e(TAG, "tokenizer load returned null")
+                    try { s.close() } catch (_: Throwable) {}
+                    initFailed = true
+                    return false
+                }
             env = e
             session = s
             tokenizer = t
@@ -85,9 +85,8 @@ class OnnxEmbeddingEngine(
      * Embed a single text into a 384-dim, L2-normalized vector.
      * Returns null on any failure (missing files, init error, runtime error).
      *
-     * Synchronized: the DJL tokenizer and ORT session native handles are NOT thread-safe. The
-     * engine is a process-wide singleton shared by the conversation-index worker, the RAG query
-     * path, and document import; concurrent calls crash the native tokenizer (getTokenCharSpans).
+     * Synchronized: the ORT session native handle is not thread-safe. The engine is a process-wide
+     * singleton shared by the conversation-index worker, the RAG query path, and document import.
      */
     @Synchronized
     fun embed(text: String): FloatArray? {
@@ -96,23 +95,19 @@ class OnnxEmbeddingEngine(
         val e = env ?: return null
         val tok = tokenizer ?: return null
 
-        // Defensive input guard: a blank string, or a pathologically long one, can trip the DJL
-        // native tokenizer's offset mapping (getTokenCharSpans) into a native abort that cannot be
-        // caught. Truncation is configured, but hard-cap the char length here as defense-in-depth.
+        // Defensive input guard: skip blanks, hard-cap char length before tokenizing.
         val input = text.trim()
         if (input.isEmpty()) return null
         val capped = if (input.length > MAX_INPUT_CHARS) input.substring(0, MAX_INPUT_CHARS) else input
 
         return try {
-            // DJL's encode(text) computes char-span offsets via a native getTokenCharSpans call
-            // that aborts (SIGABRT) on some truncated/multilingual inputs with this tokenizer. We
-            // only need token ids + mask, so encode WITHOUT char spans: encode(text, addSpecial,
-            // withCharSpans=false). This is the actual fix for the EmbeddingCacheWorker crash loop.
-            val enc = tok.encode(capped, true, false)
-            val ids = enc.ids                 // long[]
-            val mask = enc.attentionMask      // long[]
-            val seq = ids.size
+            // Pure-Kotlin BPE tokenizer (see BpeTokenizer): no DJL native, no getTokenCharSpans,
+            // so none of the native-abort crash paths apply. Produces <bos> ... <eos> ids.
+            val idInts = tok.encode(capped)
+            val seq = idInts.size
             if (seq == 0) return null
+            val ids = LongArray(seq) { idInts[it].toLong() }
+            val mask = LongArray(seq) { 1L } // single sequence, no padding -> all ones
 
             val idsTensor = OnnxTensor.createTensor(
                 e, LongBuffer.wrap(ids), longArrayOf(1, seq.toLong()),
@@ -166,9 +161,6 @@ class OnnxEmbeddingEngine(
     override fun close() {
         try {
             session?.close()
-        } catch (_: Throwable) {}
-        try {
-            tokenizer?.close()
         } catch (_: Throwable) {}
         session = null
         tokenizer = null

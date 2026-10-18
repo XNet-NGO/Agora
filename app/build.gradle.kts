@@ -140,14 +140,6 @@ android {
         resources {
             // bcprov, bcutil and bcpkix each ship the same BouncyCastle (MIT) license text.
             pickFirsts += "META-INF/LICENSE.md"
-            // The DJL 'tokenizers' jar bundles desktop native libs as resources
-            // (osx/win/linux); on Android the native libs come from tokenizer-native's
-            // jniLibs, so strip the desktop copies to avoid packaging junk.
-            excludes += "native/lib/osx-**"
-            excludes += "native/lib/win-**"
-            excludes += "native/lib/linux-**"
-            excludes += "**/*.dylib"
-            excludes += "native/lib/tokenizers.properties"
         }
     }
 
@@ -247,18 +239,14 @@ dependencies {
     }
     // On-device ONNX embeddings. ORT Java API from a vendored, self-built jar (1.28.2) whose
     // matched native libs live in src/main/jniLibs (sherpa-onnx compatible for future STT) —
-    // replaces the Maven com.microsoft.onnxruntime:onnxruntime-android. DJL supplies the
-    // HuggingFace tokenizer (tokenizer.json); its Android native libs come from
-    // tokenizer-native (desktop copies are excluded in packaging).
+    // replaces the Maven com.microsoft.onnxruntime:onnxruntime-android. The embedding tokenizer
+    // is a pure-Kotlin BPE (see api/BpeTokenizer) reading tokenizer.json directly — no DJL native
+    // (its getTokenCharSpans aborted on arm64; the native tokenizer has been removed entirely).
     implementation(files("libs/onnxruntime-1.28.2.jar"))
     // onnxruntime-genai 0.17.0 (on-device LLM chat). The Java API jar; its native libs
     // (libonnxruntime-genai*.so, libmat.so) are in jniLibs and dlopen the vendored ORT 1.28.2
     // via OrtGetApiBase (stable C ABI) — no second libonnxruntime.so.
     implementation(files("libs/onnxruntime-genai-0.17.0.jar"))
-    implementation(libs.djl.tokenizers) {
-        exclude(group = "ai.djl.huggingface", module = "tokenizers-native")
-    }
-    runtimeOnly(libs.djl.tokenizer.native.android)
     // WebUI server (stage 2): embedded HTTP with the pure-Kotlin CIO engine.
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.cio)

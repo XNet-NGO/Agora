@@ -117,13 +117,22 @@ class ShellToolProvider(
     private fun resolveShellDevice(serverName: String, ctx: GenerationContext): ShellDeviceConfig? {
         if (serverName.equals("Local Sandbox", ignoreCase = true)) return null
         return if (serverName.isNotBlank()) {
-            ctx.shellDevices.find { it.name.equals(serverName, ignoreCase = true) }
-        } else if (ctx.shellDevices.size == 1) {
-            ctx.shellDevices.first()
-        } else null
+            // singleOrNull: a duplicate name is ambiguous -> null -> serverNotFoundMessage() explains it.
+            ctx.shellDevices.filter { it.name.equals(serverName, ignoreCase = true) }.singleOrNull()
+        } else if (ctx.shellDevices.size == 1) ctx.shellDevices.first() else null
     }
 
+    private fun isAmbiguousServer(serverName: String, ctx: GenerationContext): Boolean =
+        serverName.isNotBlank() &&
+            ctx.shellDevices.count { it.name.equals(serverName, ignoreCase = true) } > 1
+
     private fun serverNotFoundMessage(serverName: String, ctx: GenerationContext): String {
+        if (isAmbiguousServer(serverName, ctx)) {
+            val dupes = ctx.shellDevices.filter { it.name.equals(serverName, ignoreCase = true) }
+                .joinToString(", ") { "${it.name} (type: ${it.type})" }
+            return "Ambiguous server: \"$serverName\" matches more than one configured device " +
+                "[$dupes]. Rename one of them so each shell server has a unique name, then retry."
+        }
         val hasSandbox = ctx.sandboxEnabled && sandboxFactory?.isAvailable() == true
         val allNames = buildList {
             if (hasSandbox) add("\"Local Sandbox\"")

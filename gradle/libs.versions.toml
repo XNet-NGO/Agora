@@ -23,8 +23,6 @@ work = "2.10.0"
 jsch = "0.2.23"
 commonsCompress = "1.27.1"
 pdfboxAndroid = "2.0.27.0"
-# On-device ML: HuggingFace tokenizer for the ONNX embedding engine (ai.djl).
-djlTokenizers = "0.33.0"
 ktor = "3.4.2"
 bouncycastle = "1.86"
 
@@ -66,8 +64,6 @@ pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref
 # DJL HuggingFace tokenizer (reads tokenizer.json) for the ONNX embedding engine.
 # The ORT Java API itself is vendored as a local jar (app/libs/onnxruntime-1.28.2.jar),
 # matched to the native libs in jniLibs; it is NOT the Maven onnxruntime-android.
-djl-tokenizers = { group = "ai.djl.huggingface", name = "tokenizers", version.ref = "djlTokenizers" }
-djl-tokenizer-native-android = { group = "ai.djl.android", name = "tokenizer-native", version.ref = "djlTokenizers" }
 ktor-server-core = { group = "io.ktor", name = "ktor-server-core", version.ref = "ktor" }
 ktor-server-cio = { group = "io.ktor", name = "ktor-server-cio", version.ref = "ktor" }
 ktor-server-websockets = { group = "io.ktor", name = "ktor-server-websockets", version.ref = "ktor" }

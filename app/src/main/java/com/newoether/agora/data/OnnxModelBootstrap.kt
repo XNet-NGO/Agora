@@ -27,7 +27,7 @@ object OnnxModelBootstrap {
     private const val MODEL_URL =
         "https://github.com/XNet-NGO/deps/releases/download/bekko-embedding/bekko-model.onnx"
 
-    /** HuggingFace fast-tokenizer definition (read directly by the DJL tokenizer). */
+    /** HuggingFace tokenizer.json (parsed by the pure-Kotlin [com.newoether.agora.api.BpeTokenizer]). */
     private const val TOKENIZER_URL =
         "https://github.com/XNet-NGO/deps/releases/download/bekko-embedding/bekko-tokenizer.json"
 

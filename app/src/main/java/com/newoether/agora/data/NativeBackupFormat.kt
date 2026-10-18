@@ -75,7 +75,7 @@ internal data class NativeBackupSecrets(
 )
 
 internal fun ShellDeviceConfig.withoutSecrets(): ShellDeviceConfig =
-    copy(apiKey = "", sshPassword = "")
+    copy(apiKey = "", sshPassword = "", sshPrivateKey = "", sshKeyPassphrase = "")
 
 internal fun McpServerConfig.withoutSecrets(): McpServerConfig =
     copy(headers = emptyMap())

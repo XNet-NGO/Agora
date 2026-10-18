@@ -22,6 +22,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -234,6 +236,10 @@ private fun DeviceEditor(
     var sshPortInput by remember(device.id) { mutableStateOf(device.sshPort.toString()) }
     var sshUserInput by remember(device.id) { mutableStateOf(device.sshUser) }
     var sshPwInput by remember(device.id) { mutableStateOf(device.sshPassword) }
+    var sshPrivateKeyInput by remember(device.id) { mutableStateOf(device.sshPrivateKey) }
+    var sshKeyPassphraseInput by remember(device.id) { mutableStateOf(device.sshKeyPassphrase) }
+    var showKeyPasteDialog by remember(device.id) { mutableStateOf(false) }
+    val appContext = LocalContext.current
     var sshHostKeyInput by remember(device.id) { mutableStateOf(device.sshHostKey) }
     val nameFocusRequester = remember { FocusRequester() }
     val urlFocusRequester = remember { FocusRequester() }
@@ -249,6 +255,7 @@ private fun DeviceEditor(
         sshHostInput = device.sshHost; sshPortInput = device.sshPort.toString()
         sshUserInput = device.sshUser; sshPwInput = device.sshPassword
         sshHostKeyInput = device.sshHostKey
+        sshPrivateKeyInput = device.sshPrivateKey; sshKeyPassphraseInput = device.sshKeyPassphrase
     }
 
     LaunchedEffect(isNewlyAdded) {
@@ -362,6 +369,50 @@ private fun DeviceEditor(
                         trailingIcon = { SecretVisibilityToggle(passwordVisible) { passwordVisible = !passwordVisible } },
                         singleLine = true, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth())
 
+                    // ── Private-key auth (optional) ──
+                    Spacer(Modifier.height(10.dp))
+                    val keyFilePicker = rememberLauncherForActivityResult(
+                        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+                    ) { uri ->
+                        if (uri != null) {
+                            runCatching {
+                                appContext.contentResolver.openInputStream(uri)?.use {
+                                    it.readBytes().decodeToString()
+                                }
+                            }.getOrNull()?.let { sshPrivateKeyInput = it.trim() }
+                        }
+                    }
+                    val keySet = sshPrivateKeyInput.isNotBlank()
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.VpnKey, null, tint = if (keySet) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            if (keySet) stringResource(R.string.shell_ssh_key_set) else stringResource(R.string.shell_ssh_key_none),
+                            style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f),
+                        )
+                        if (keySet) TextButton(onClick = { sshPrivateKeyInput = ""; sshKeyPassphraseInput = "" }) {
+                            Text(stringResource(R.string.shell_ssh_key_clear))
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(onClick = { keyFilePicker.launch(arrayOf("*/*")) }, modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.shell_ssh_key_import_file))
+                        }
+                        OutlinedButton(onClick = { showKeyPasteDialog = true }, modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.shell_ssh_key_paste))
+                        }
+                    }
+                    if (keySet) {
+                        Spacer(Modifier.height(8.dp))
+                        var passphraseVisible by rememberSecretVisible()
+                        OutlinedTextField(value = sshKeyPassphraseInput, onValueChange = { sshKeyPassphraseInput = it },
+                            label = { Text(stringResource(R.string.shell_ssh_key_passphrase)) },
+                            leadingIcon = { Icon(Icons.Default.Lock, null) },
+                            visualTransformation = secretVisualTransformation(passphraseVisible),
+                            trailingIcon = { SecretVisibilityToggle(passphraseVisible) { passphraseVisible = !passphraseVisible } },
+                            singleLine = true, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth())
+                    }
+
                     // ── Host-key pinning (TOFU) ──
                     Spacer(Modifier.height(10.dp))
                     val pinned = sshHostKeyInput.isNotBlank()
@@ -444,6 +495,8 @@ private fun DeviceEditor(
                             sshPort = sshPortInput.toIntOrNull() ?: 22,
                             sshUser = if (typeInput == "ssh") sshUserInput.trim().ifBlank { "root" } else "root",
                             sshPassword = if (typeInput == "ssh") sshPwInput else "",
+                            sshPrivateKey = if (typeInput == "ssh") sshPrivateKeyInput else "",
+                            sshKeyPassphrase = if (typeInput == "ssh") sshKeyPassphraseInput else "",
                             sshHostKey = if (typeInput == "ssh") sshHostKeyInput else ""
                         )); expanded = false
                     }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.save)) }
@@ -478,6 +531,31 @@ private fun DeviceEditor(
                     }
                 },
                 dismissButton = { TextButton(onClick = { pendingVerify = null }) { Text(stringResource(R.string.cancel)) } }
+            )
+        }
+
+        // ── Paste a private key ──
+        if (showKeyPasteDialog) {
+            var pasteBuffer by remember { mutableStateOf(sshPrivateKeyInput) }
+            AlertDialog(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                onDismissRequest = { showKeyPasteDialog = false },
+                icon = { Icon(Icons.Default.VpnKey, null, tint = MaterialTheme.colorScheme.primary) },
+                title = { Text(stringResource(R.string.shell_ssh_key_paste), fontWeight = FontWeight.Bold) },
+                text = {
+                    OutlinedTextField(
+                        value = pasteBuffer, onValueChange = { pasteBuffer = it },
+                        label = { Text(stringResource(R.string.shell_ssh_key_paste_hint)) },
+                        minLines = 4, maxLines = 10, shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { sshPrivateKeyInput = pasteBuffer.trim(); showKeyPasteDialog = false }) {
+                        Text(stringResource(R.string.save))
+                    }
+                },
+                dismissButton = { TextButton(onClick = { showKeyPasteDialog = false }) { Text(stringResource(R.string.cancel)) } }
             )
         }
     }

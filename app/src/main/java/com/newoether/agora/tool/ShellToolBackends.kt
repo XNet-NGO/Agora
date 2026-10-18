@@ -213,7 +213,9 @@ internal class SshBackend(override val device: ShellDeviceConfig) : Backend {
             host, port, user, password,
             pinnedHostKey = hostKey,
             // Un-pinned devices stay usable (capture-only); once a key is pinned it is enforced.
-            allowUnknownHostKey = hostKey.isBlank()
+            allowUnknownHostKey = hostKey.isBlank(),
+            privateKey = device.sshPrivateKey,
+            keyPassphrase = device.sshKeyPassphrase,
         )
     }
 

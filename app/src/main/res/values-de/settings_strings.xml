@@ -486,6 +486,9 @@
     <string name="settings_interaction">Interaktion</string>
     <string name="settings_interaction_desc">Fragen, die der Assistent dir stellt</string>
     <string name="ask_user_enable">Assistent darf fragen</string>
+    <string name="ask_user_timeout">Zeitlimit</string>
+    <string name="ask_user_timeout_desc">Wartezeit für einen blockierenden Fragensatz. Unbeantwortete Fragen werden nach Ablauf übersprungen.</string>
+    <string name="ask_user_timeout_minutes">%1$d Min.</string>
     <string name="ask_user_enable_desc">Gibt dem Modell ein Werkzeug, um dich zu fragen und auf deine Wahl zu warten</string>
     <string name="unsaved_changes_title">Ungespeicherte Änderungen</string>
     <string name="unsaved_changes_message">Es gibt ungespeicherte Änderungen. Verwerfen?</string>

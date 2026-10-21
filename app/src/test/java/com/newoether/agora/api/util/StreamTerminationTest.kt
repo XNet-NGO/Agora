@@ -25,6 +25,44 @@ class StreamTerminationTest {
         assertFalse(StreamEvent.TextChunk("").carriesModelOutput())
     }
 
+    @Test
+    fun formattingOnlyChunksKeepParseAndReadFailuresEligibleBeforeOutput() {
+        listOf(
+            StreamEvent.TextChunk(" \t\n"),
+            StreamEvent.ThoughtChunk(" \t\n"),
+        ).forEach { event ->
+            assertFalse(event.toString(), event.carriesModelOutput())
+            listOf(
+                GenerationError.SseParse("broken-json", "invalid JSON"),
+                GenerationError.Network(0, "The server response could not be read."),
+                GenerationError.Network(0, "Unexpected end of stream"),
+                GenerationError.Api(null, null, "The server response could not be read."),
+            ).forEach { error ->
+                val result = termination(
+                    sawTerminalMarker = false,
+                    stopReason = null,
+                    producedContent = event.carriesModelOutput(),
+                    streamError = error,
+                )
+                assertTrue(error.toString(), result.isRetryable)
+                assertFalse(result.copy(producedContent = true).isRetryable)
+                assertFalse(result.copy(alreadyReportedError = true).isRetryable)
+                assertFalse(result.copy(stopReason = "max_tokens").isRetryable)
+            }
+            val permanent = termination(
+                sawTerminalMarker = false,
+                stopReason = null,
+                producedContent = event.carriesModelOutput(),
+                streamError = GenerationError.Api("insufficient_quota", null, "The server response could not be read."),
+            )
+            assertFalse(permanent.isRetryable)
+        }
+        assertTrue(StreamEvent.TextChunk(" answer ").carriesModelOutput())
+        assertTrue(StreamEvent.ThoughtChunk(" reasoning ").carriesModelOutput())
+        assertTrue(StreamEvent.ThoughtChunk(" \n", signature = "signed").carriesModelOutput())
+        assertTrue(StreamEvent.ToolCallUpdate("call", id = null, name = "file_read", arguments = "{}").carriesModelOutput())
+    }
+
     private fun termination(
         sawTerminalMarker: Boolean = true,
         stopReason: String? = "end_turn",
@@ -215,6 +253,63 @@ class StreamTerminationTest {
             java.net.UnknownHostException("The server response could not be read.")
                 .asRetryableTransportError()
         )
+    }
+
+    @Test
+    fun permanentOrUnknownApiErrorsCannotRetryThroughAnIncompleteStream() {
+        listOf(
+            GenerationError.Api("insufficient_quota", "rate_limit_error", "Failed to generate"),
+            GenerationError.Api("429", "invalid_request_error", "Overloaded"),
+            GenerationError.Api(null, "provider_error", "Rejected"),
+        ).forEach { error ->
+            listOf(false, true).forEach { terminal ->
+                val result = termination(
+                    sawTerminalMarker = terminal,
+                    stopReason = null,
+                    producedContent = false,
+                    toolCallInFlight = true,
+                    timedOut = true,
+                    retryableStreamError = true,
+                    streamError = error,
+                )
+                assertEquals(error, result.toError("test"))
+                assertFalse(error.toString(), result.isRetryable)
+            }
+        }
+    }
+
+    @Test
+    fun prematureEofInCauseChainMapsOpeningAndBodyReads() {
+        listOf(
+            java.io.EOFException(),
+            java.io.IOException("Unexpected end of stream on https://example.invalid"),
+            java.io.IOException("read failed", java.io.IOException("Unexpected end of file")),
+            IllegalStateException("wrapper", java.io.EOFException()),
+        ).forEach { failure ->
+            val opening = failure.asRetryableTransportError()
+            val body = failure.asRetryableResponseBodyReadError()
+            assertTrue(failure.toString(), opening is GenerationError.Network)
+            assertEquals(opening, body)
+            val result = termination(producedContent = false, streamError = body)
+            assertTrue(result.isRetryable)
+            assertFalse(result.copy(producedContent = true).isRetryable)
+            assertFalse(result.copy(stopReason = "max_tokens").isRetryable)
+            assertFalse(result.copy(alreadyReportedError = true).isRetryable)
+        }
+    }
+
+    @Test
+    fun bodyReadClassificationPreservesDnsCancellationAndUnrelatedIoFailures() {
+        listOf(
+            java.io.IOException("disk or protocol failure"),
+            IllegalStateException("Unexpected end of stream"),
+            java.io.IOException("Unexpected end of stream", java.net.UnknownHostException("host")),
+            java.io.IOException("Unexpected end of file", kotlinx.coroutines.CancellationException("stopped")),
+            kotlinx.coroutines.CancellationException("Unexpected end of stream"),
+        ).forEach { failure ->
+            assertNull(failure.toString(), failure.asRetryableResponseBodyReadError())
+            assertNull(failure.toString(), failure.asRetryableTransportError())
+        }
     }
 
     @Test

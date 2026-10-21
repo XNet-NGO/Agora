@@ -1,6 +1,6 @@
 # Remote Shell
 
-Open **Settings → Shell Devices** to configure Conch or SSH devices used by agentic tools.
+Open **Settings → Shell Devices** to configure Conch or SSH devices used by agentic tools. Give each device a unique name and select Save to create it. Names ignore surrounding whitespace and case; `Local Sandbox` is reserved for the on-device sandbox. Duplicate names cannot be saved. Leaving a new editor without saving creates no device.
 
 ## Conch
 

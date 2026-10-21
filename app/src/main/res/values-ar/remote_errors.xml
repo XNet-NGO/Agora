@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="remote_failed">تعذر إكمال الإجراء عن بُعد. راجع تفاصيل الخطأ.</string>
-    <string name="remote_unknown">لم يتأكد التسليم. تحقق من المحادثة في Codex قبل الإرسال مجددًا.</string>
+    <string name="remote_unknown">التسليم غير مؤكد. تحقق من Codex قبل الإرسال مجددًا. «السماح بالإرسال» يزيل هذا التحذير فقط ولا يرسل أي رسالة.</string>
     <string name="remote_rejected">لم يقبل Codex الرسالة. راجع تفاصيل الخطأ قبل المحاولة مجددًا.</string>
     <string name="remote_storage_failed">تعذر على Agora الوصول إلى بيانات Remote المحلية. تحقق من المساحة المتاحة.</string>
     <string name="remote_network_failed">تعذر الاتصال بـ Filo. تحقق من الكمبيوتر المستهدف وعنوان الخدمة والشبكة.</string>

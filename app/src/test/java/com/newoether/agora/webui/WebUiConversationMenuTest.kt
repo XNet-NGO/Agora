@@ -84,12 +84,14 @@ class WebUiConversationMenuTest {
         send("""{"type":"conversation_title","conversationId":"b"}""")
         send("""{"type":"conversation_title"}""")
         send("""{"type":"conversation_title","conversationId":" "}""")
-        verify(exactly = 1) { generation.generateTitle(any(), any()) }
+        verify(exactly = 2) { generation.generateTitle("b", session) }
+        verify(exactly = 2) { generation.generateTitle(any(), any()) }
     }
 
     @Test
     fun pinUsesTheConversationLifecycleOwnerThePhoneUses() = sync { send, received ->
         received()
+        generating.value = setOf("b")
         send("""{"type":"pin","conversationId":"b","enabled":true}""")
         verify(exactly = 1) { lifecycle.setPinned("b", true) }
         coVerify(exactly = 0) { conversations.setConversationPinned(any(), any()) }
@@ -98,6 +100,7 @@ class WebUiConversationMenuTest {
     @Test
     fun renameUsesTheConversationLifecycleOwnerAndABlankTitleIsNotACommand() = sync { send, received ->
         received()
+        generating.value = setOf("b")
         send("""{"type":"conversation_rename","conversationId":"b","text":"  Kept  "}""")
         verify(exactly = 1) { lifecycle.rename("b", "Kept") }
         send("""{"type":"conversation_rename","conversationId":"b","text":"   "}""")
@@ -108,6 +111,7 @@ class WebUiConversationMenuTest {
     @Test
     fun deleteRunsTheConversationLifecycleOwnerWithThisConnectionAsOriginAndAnswersItsActionId() = sync { send, received ->
         received()
+        generating.value = setOf("b")
         send("""{"type":"conversation_delete","conversationId":"b","actionId":7}""")
         val event = received().single { it.type == "conversation_delete" }
         assertEquals("b", event.string("conversationId"))

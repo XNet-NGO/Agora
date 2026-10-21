@@ -7,9 +7,9 @@ import { CircularProgress, Spinner } from "./material/progress.js";
 import { Markdown, highlightSearch } from "./markdown.js";
 import {
   icon, ICON_WEB, ICON_BUILD, ICON_CALL_SPLIT, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT,
-  ICON_COMPRESS, ICON_CONTENT_COPY, ICON_DELETE, ICON_EDIT, ICON_ERROR, ICON_IMAGE, ICON_INFO,
-  ICON_MORE_VERT, ICON_NEUROLOGY, ICON_QUESTION_ANSWER, ICON_REFRESH, ICON_REPEAT,
-  ICON_SCHEDULE, ICON_SELECT_ALL, ICON_SHARE, ICON_STOP_CIRCLE,
+  ICON_COMPRESS, ICON_COMPACT_ERROR, ICON_CONTENT_COPY, ICON_DELETE, ICON_EDIT, ICON_ERROR, ICON_IMAGE, ICON_INFO,
+  ICON_MORE_VERT, ICON_NEUROLOGY, ICON_ACCOUNT_TREE, ICON_QUESTION_ANSWER, ICON_REFRESH, ICON_REPEAT,
+  ICON_SCHEDULE, ICON_SELECT_ALL, ICON_SHARE, ICON_STOP_CIRCLE, ICON_LINK,
 } from "./icons.js";
 import { MoreMenu } from "./menu.js";
 import { t } from "./i18n.js";
@@ -102,7 +102,7 @@ function sheetItemsForMessage(message, groupKey) {
 }
 
 
-/** The text a row copies and edits: an ask_user row reads as its questions and answers, as on the phone. */
+/** Copy and Select Text retain the original body, including a compact Subagent receipt's result. */
 function readableText(message) {
   const source = message?.source;
   if (source?.kind !== "ask_user") return message?.text?.markdown ?? "";
@@ -114,7 +114,7 @@ function readableText(message) {
 /** The phone answers a copy with a haptic; the nearest browser answer is the app's own notice. */
 async function copyRowText(message) {
   try {
-    await navigator.clipboard.writeText(readableText(message));
+    await navigator.clipboard.writeText(message.presentation?.copyText ?? readableText(message));
     sync.notify(t.copied);
   } catch (_) {
     sync.notify(t.copyFailed);
@@ -132,6 +132,7 @@ function formatRowTime(value) {
 const SOURCE_LABELS = {
   task: [ICON_SCHEDULE, "sourceTask"],
   loop: [ICON_REPEAT, "sourceLoop"],
+  subagent: [ICON_ACCOUNT_TREE, "sourceSubagent"],
   ask_user: [ICON_QUESTION_ANSWER, "sourceAskUser"],
 };
 
@@ -143,6 +144,16 @@ function SourceLabel({ source }) {
     <div class="message-source">${icon(labelled[0])}<span>${t[labelled[1]]}</span></div>`;
 }
 
+/** Completion display comes from the model; child instructions have no result display metadata. */
+function SubagentResult({ result }) {
+  const name = result.name.trim() || t.sourceSubagent;
+  const status = t.subagentStatuses[result.status];
+  return html`<div class="user-text subagent-result" role="group" aria-label=${t.sourceSubagent}>
+    <div class="subagent-result-name">${name}</div>
+    ${status && html`<div class="subagent-result-status">${status}</div>`}
+  </div>`;
+}
+
 /**
  * AskUserAnswerBlocks: each question at 14/20 and 60 %, its answer at the user body, and one blank
  * line between pairs. Nobody answering leaves the localized unanswered label at 60 %.
@@ -151,13 +162,18 @@ function fillAskUserPairs(node, items) {
   node.replaceChildren();
   // Separate blocks, as on the phone: an inline 14/20 question inside the 24.2 px body would sit on
   // the body's line strut and keep the body's line spacing. style.css adds the blank line.
+  let sourceStart = 0;
   items.forEach((item) => {
     const question = document.createElement("div");
     question.className = "ask-user-question";
+    question.dataset.sourceStart = String(sourceStart);
     question.textContent = item.question;
+    sourceStart += item.question.length + 1;
     const answer = document.createElement("div");
     answer.className = item.answer == null ? "ask-user-answer unanswered" : "ask-user-answer";
+    answer.dataset.sourceStart = String(sourceStart);
     answer.textContent = item.answer ?? t.sourceUnanswered;
+    sourceStart += answer.textContent.length + 2;
     node.append(question, answer);
   });
 }
@@ -180,16 +196,17 @@ function RowMenuItem({ path, label, enabled = true, destructive = false, onClick
  * The 32 dp overflow button of a row and the AgoraDropdownMenu it anchors. [items] draws the items
  * with the close action; the menu hands focus back to the button when it was holding it.
  */
-function RowMore({ reduceMotion, items }) {
+function RowMore({ reduceMotion, items, enabled = true }) {
   const anchor = useRef(null);
   const [open, setOpen] = useState(false);
   const [retained, setRetained] = useState(false);
   const close = () => setOpen(false);
+  useEffect(() => { if (!enabled) setOpen(false); }, [enabled]);
   return html`
-    <button class="row-action" type="button" ref=${anchor} title=${t.options} aria-label=${t.options}
+    <button class="row-action" type="button" ref=${anchor} title=${t.options} aria-label=${t.options} disabled=${!enabled}
       aria-haspopup="menu" aria-expanded=${open ? "true" : "false"}
       onClick=${() => { setRetained(true); setOpen(!open); }}>${icon(ICON_MORE_VERT)}</button>
-    ${(open || retained) && html`<${MoreMenu} expanded=${open} reduceMotion=${reduceMotion} anchor=${anchor}
+    ${(open || retained) && html`<${MoreMenu} expanded=${open && enabled} reduceMotion=${reduceMotion} anchor=${anchor}
       onClose=${close}
       onExited=${(ownedFocus) => { setRetained(false); if (ownedFocus) anchor.current?.focus(); }}>
       ${items(close)}
@@ -229,14 +246,14 @@ function MessageInfoDialog({ message, onClose: onClosed }) {
  * The phone's inline editor for a user row: it resends the edited text through the phone's own edit
  * owner, so only Save commits. Escape and the scrim dismiss without sending anything.
  */
-function MessageEditDialog({ message, onClose: onClosed }) {
+function MessageEditDialog({ message, canEdit, onClose: onClosed }) {
   const dialog = useRef(null);
   const onClose = useDialog(dialog, onClosed);
   const field = useRef(null);
   const [value, setValue] = useState(readableText(message));
   useLayoutEffect(() => { field.current?.focus(); }, []);
   function save() {
-    if (!value.trim()) return;
+    if (!canEdit() || message.source || !value.trim()) return;
     if (sync.rowCommand("edit", message.id, { text: value })) onClose();
   }
   return html`
@@ -313,6 +330,12 @@ function UserBubble({ message, search, matches, reduceMotion, generating, delete
   const [info, setInfo] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [editing, setEditing] = useState(false);
+  const editable = !generating && message.source == null;
+  const editAllowed = useRef(editable);
+  editAllowed.current = editable;
+  const canEdit = () => editAllowed.current;
+  const edit = () => { if (canEdit()) setEditing(true); };
+  useLayoutEffect(() => { if (!editable) setEditing(false); }, [editable]);
   const [preview, setPreview] = useState(null);
   const [failedImages, setFailedImages] = useState(new Set());
   const attachments = message.attachments ?? [];
@@ -321,12 +344,30 @@ function UserBubble({ message, search, matches, reduceMotion, generating, delete
     url: `/api/message-attachments/${encodeURIComponent(conversationId)}/${encodeURIComponent(message.id)}/${item.index}`,
   }));
   const askUser = message.source?.kind === "ask_user" ? message.source.askUser : null;
+  const result = message.source?.kind === "subagent" ? message.source.subagentResult : null;
   const visible = readableText(message);
+  const hasText = !result && (message.text?.markdown ?? "").length > 0;
+  const hasBody = hasText || !!askUser || !!result;
+  const askUserKey = JSON.stringify(askUser);
+  const searchKey = JSON.stringify([!!search?.query.trim(), matches.map(match =>
+    [match.key, match.start, match.endExclusive])]);
+  const activeMatch = search?.matches[search.index]?.key;
   useLayoutEffect(() => {
+    if (!text.current) return;
     if (askUser) fillAskUserPairs(text.current, askUser);
     else text.current.textContent = visible;
-    highlightSearch(text.current, search, matches);
-  }, [visible, askUser, search, matches]);
+  }, [visible, askUserKey, hasText]);
+  useLayoutEffect(() => {
+    return text.current ? highlightSearch(text.current, search, matches) : undefined;
+  }, [visible, askUserKey, hasText, searchKey]);
+  useLayoutEffect(() => {
+    const active = CSS.highlights.get("agora-search-active");
+    for (const range of CSS.highlights.get("agora-search") ?? []) {
+      if (!text.current?.contains(range.startContainer)) continue;
+      if (range.searchKey === activeMatch) active?.add(range);
+      else active?.delete(range);
+    }
+  }, [visible, askUserKey, hasText, searchKey, activeMatch]);
   return html`
     <div class="user-row" onContextMenu=${(event) => {
       event.preventDefault();
@@ -336,14 +377,14 @@ function UserBubble({ message, search, matches, reduceMotion, generating, delete
       <${SourceLabel} source=${message.source} />
       <div class="user-message-content">
         <div class="user-hover-actions">
-          <${RowAction} path=${ICON_EDIT} size=${18} label=${t.edit} enabled=${!generating}
-            onClick=${() => setEditing(true)} />
+          <${RowAction} path=${ICON_EDIT} size=${18} label=${t.edit} enabled=${editable}
+            onClick=${edit} />
           <button class="row-action" type="button" ref=${menuButton} title=${t.options} aria-label=${t.options}
             aria-haspopup="menu" aria-expanded=${menuOpen} onClick=${() => { setRetainedMenu(true); setMenuOpen(!menuOpen); }}>
             ${icon(ICON_MORE_VERT)}</button>
         </div>
-        <div class="user-bubble">
-          ${attachments.length > 0 && html`<div class="user-attachments">
+        <div class=${`user-bubble${result ? " subagent-result-bubble" : ""}`}>
+          ${attachments.length > 0 && html`<div class="user-attachments" data-body-gap=${hasBody}>
             ${attachments.map(item => {
               const index = media.findIndex(current => current.index === item.index);
               const failed = item.unavailable || failedImages.has(item.index);
@@ -361,7 +402,8 @@ function UserBubble({ message, search, matches, reduceMotion, generating, delete
               </span>` : html`<span key=${item.index} class="user-attachment-media">${thumbnail}</span>`;
             })}
           </div>`}
-          <div class="user-text" ref=${text}></div>
+          ${result ? html`<${SubagentResult} result=${result} />`
+            : (hasText || askUser) && html`<div class="user-text" ref=${text}></div>`}
         </div>
       </div>
       ${branchControl}
@@ -369,12 +411,12 @@ function UserBubble({ message, search, matches, reduceMotion, generating, delete
         anchor=${menuButton} onClose=${() => setMenuOpen(false)}
         onExited=${(ownedFocus) => {
           setRetainedMenu(false);
-          if (ownedFocus) text.current.closest(".user-row").querySelector(".user-bubble")?.focus?.();
+          if (ownedFocus) menuButton.current?.focus();
         }}>
         <${RowMenuItem} path=${ICON_CONTENT_COPY} label=${t.copy} enabled=${visible.trim().length > 0}
           onClick=${() => { setMenuOpen(false); copyRowText(message); }} />
-        <${RowMenuItem} path=${ICON_EDIT} label=${t.edit} enabled=${!generating}
-          onClick=${() => { setMenuOpen(false); setEditing(true); }} />
+        <${RowMenuItem} path=${ICON_EDIT} label=${t.edit} enabled=${editable}
+          onClick=${() => { setMenuOpen(false); edit(); }} />
         <${RowMenuItem} path=${ICON_SELECT_ALL} label=${t.selectText} enabled=${visible.trim().length > 0}
           onClick=${() => { setMenuOpen(false); setSelecting(true); }} />
         <${RowMenuItem} path=${ICON_INFO} label=${t.info}
@@ -389,7 +431,7 @@ function UserBubble({ message, search, matches, reduceMotion, generating, delete
       ${info && html`<${MessageInfoDialog} message=${message} onClose=${() => setInfo(false)} />`}
       ${preview != null && html`<${AttachmentViewer} viewer=${{ items: media, index: preview }}
         onNavigate=${setPreview} onClose=${() => setPreview(null)} />`}
-      ${editing && html`<${MessageEditDialog} message=${message} onClose=${() => setEditing(false)} />`}
+      ${editing && editable && html`<${MessageEditDialog} message=${message} canEdit=${canEdit} onClose=${() => setEditing(false)} />`}
     </div>`;
 }
 
@@ -418,7 +460,7 @@ function CompactPill({ message, reduceMotion, generating, display, wrap, onRecom
         <button class=${`compact-pill ${presentation}`} type="button" onClick=${() => setDetail(true)}>
           <span class="compact-mark">
             ${running && html`<${CircularProgress} size=${18} stroke=${2} color="var(--md-on-secondary-container)" />`}
-            ${message.status === "ERROR" && icon(ICON_ERROR)}
+            ${message.status === "ERROR" && icon(ICON_COMPACT_ERROR)}
             ${message.status === "STOPPED" && icon(ICON_STOP_CIRCLE, "0 0 24 24", "evenodd")}
             ${message.status === "SUCCESS" && icon(ICON_COMPRESS)}
           </span>
@@ -434,7 +476,9 @@ function CompactPill({ message, reduceMotion, generating, display, wrap, onRecom
       </div>
       ${detail && html`<${DetailSheet} title=${t.compact} display=${display} onClose=${() => setDetail(false)}>
         <div class="detail-sheet-markdown"><${Markdown} text=${message.text} variant="thought" wrap=${wrap}
-          streaming=${running} reduceMotion=${reduceMotion} emptyStreamingText=${t.compactStreaming} /></div>
+          streaming=${running} reduceMotion=${reduceMotion} emptyStreamingText=${t.compactStreaming} />
+          ${message.presentation?.compactDetailErrorText != null && html`<div class="generation-activity generation-terminal">${message.presentation.compactDetailErrorText}</div>`}
+        </div>
       </${DetailSheet}>`}
     </div>`;
 }
@@ -444,24 +488,34 @@ function CompactPill({ message, reduceMotion, generating, display, wrap, onRecom
  * Copy and MoreVert are the information group, Regenerate, Fork and Share the terminal group, and
  * both ride one alpha: 320 ms in, 220 ms out, linear.
  */
-function AssistantActions({ message, generating, reduceMotion, onFork, onShare, onInfo, onDelete, branchControl }) {
-  const terminalEnabled = !generating;
-  const copyTextValue = readableText(message);
+function AssistantActions({ message, visible, generating, reduceMotion, onFork, onShare, onInfo, onDelete, branchControl, onSources }) {
+  const terminalEnabled = visible && !generating;
+  const copyTextValue = message.presentation?.copyText ?? readableText(message);
+  const [retainSources, setRetainSources] = useState(visible);
+  useLayoutEffect(() => { if (visible) setRetainSources(true); }, [visible]);
+  const sources = message.presentation?.sources ?? [];
   return html`
-    <div class="message-actions">
+    <div class="message-information" data-visible=${visible} inert=${!visible} aria-hidden=${visible ? null : "true"}
+      onTransitionEnd=${event => {
+        if (event.target === event.currentTarget && event.propertyName === "opacity" && !visible) setRetainSources(false);
+      }}>
+      ${(visible || retainSources) && sources.length > 0 && html`<button class="citation-summary" type="button" disabled=${!visible}
+        onClick=${onSources}>${icon(ICON_LINK)}<span>${message.presentation.sourcesTitle}</span></button>`}
+      <div class="message-actions">
       ${copyTextValue.trim().length > 0 && html`<${RowAction} path=${ICON_CONTENT_COPY} size=${16}
-        label=${t.copy} onClick=${() => copyRowText(message)} />`}
+        label=${t.copy} enabled=${visible} onClick=${() => copyRowText(message)} />`}
       <${RowAction} path=${ICON_REFRESH} size=${19} enabled=${terminalEnabled} label=${t.regenerate}
         onClick=${() => sync.rowCommand("regenerate", message.id)} />
       <${RowAction} path=${ICON_CALL_SPLIT} size=${18} enabled=${terminalEnabled} label=${t.forkFromHere}
         onClick=${onFork} />
       <${RowAction} path=${ICON_SHARE} size=${16} enabled=${terminalEnabled} label=${t.share}
         onClick=${onShare} />
-      <${RowMore} reduceMotion=${reduceMotion} items=${(close) => html`
-        <${RowMenuItem} path=${ICON_INFO} label=${t.info} onClick=${() => { close(); onInfo(); }} />
+      <${RowMore} reduceMotion=${reduceMotion} enabled=${visible} items=${(close) => html`
+        <${RowMenuItem} path=${ICON_INFO} label=${t.info} enabled=${visible} onClick=${() => { close(); onInfo(); }} />
         <${RowMenuItem} path=${ICON_DELETE} label=${t.delete} destructive enabled=${terminalEnabled}
           onClick=${() => { close(); onDelete(); }} />`} />
       ${branchControl}
+      </div>
     </div>`;
 }
 
@@ -541,6 +595,28 @@ function InfoGroup({ group, messageId, display, expansion, expansionController, 
   const surface = useRef(null);
   const titleNode = useRef(null);
   const title = useCardTitle(group, display?.liveThinking);
+  const titleMotion = useRef({ text: title, animation: null, outgoing: null });
+  useLayoutEffect(() => {
+    const motion = titleMotion.current, node = titleNode.current;
+    if (motion.text === title || !node) return;
+    motion.animation?.cancel();
+    motion.outgoing?.remove();
+    const outgoing = node.cloneNode(true);
+    outgoing.textContent = motion.text;
+    outgoing.classList.add("title-outgoing");
+    outgoing.setAttribute("aria-hidden", "true");
+    outgoing.inert = true;
+    node.parentElement.append(outgoing);
+    motion.text = title;
+    motion.outgoing = outgoing;
+    outgoing.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 280, easing: "linear" });
+    motion.animation = node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 280, easing: "linear" });
+    motion.animation.onfinish = () => { outgoing.remove(); motion.animation = null; motion.outgoing = null; };
+  }, [title]);
+  useLayoutEffect(() => () => {
+    titleMotion.current.animation?.cancel();
+    titleMotion.current.outgoing?.remove();
+  }, []);
   const [widths, setWidths] = useState(null);
   const firstAppearance = useRef(!appearances.has(key) && streaming);
   useEffect(() => { appearances.add(key); }, [key]);
@@ -608,7 +684,7 @@ function InfoGroup({ group, messageId, display, expansion, expansionController, 
           aria-haspopup=${opensSheet ? "dialog" : null}
           onClick=${opensSheet ? () => onOpenSheet?.(messageId, group.key) : toggle}>
           <span class="info-header-icon"><${CardIcon} kind=${group.icon} /></span>
-          <span class="info-header-title" ref=${titleNode}>${title}</span>
+          <span class="info-title-stack"><span class="info-header-title" ref=${titleNode}>${title}</span></span>
           <span class="info-disclosure">${icon(ICON_CHEVRON_DOWN)}</span>
         </button>
         <div class="info-group-reveal" inert=${!targetExpanded}>
@@ -616,7 +692,7 @@ function InfoGroup({ group, messageId, display, expansion, expansionController, 
             ${group.items.map((item) => html`<${SegmentAppearance} key=${item.detailIndex}
               appearanceKey=${`${messageId}:segment:${item.detailIndex}:${item.type}`}
               appearances=${appearances} streaming=${streaming} opaque=${item.type === "tool"}>
-              <${InfoItem} item=${item} compact
+              <${InfoItem} item=${item} compact reduceMotion=${!!display?.reduceMotion}
                 onClick=${canOpenSheetItem(item)
                   ? () => onOpenDetail(messageId, group.key, item.detailIndex) : undefined} />
             </${SegmentAppearance}>`)}
@@ -626,14 +702,14 @@ function InfoGroup({ group, messageId, display, expansion, expansionController, 
     </div>`;
 }
 
-function InfoCard({ block, messageId, appearances, streaming, onOpenDetail }) {
+function InfoCard({ block, messageId, appearances, streaming, onOpenDetail, display }) {
   const key = `${messageId}:card:${block.item.detailIndex}`;
   const entering = useRef(!appearances.has(key) && streaming);
   useEffect(() => { appearances.add(key); }, [key]);
   return html`
     <div class=${`info-card ${block.groupPosition.toLowerCase()} ${block.precededByAnswer ? "after-answer" : ""} ${block.item.type === "tool" ? "has-tool" : ""} ${entering.current ? "entering" : ""}`}
       data-detail=${block.item.detailIndex}>
-      <div class="info-card-surface"><${InfoItem} item=${block.item}
+      <div class="info-card-surface"><${InfoItem} item=${block.item} reduceMotion=${!!display?.reduceMotion}
         onClick=${canOpenSheetItem(block.item)
           ? () => onOpenDetail(messageId, null, block.item.detailIndex) : undefined} /></div>
     </div>`;
@@ -704,26 +780,55 @@ function RetryActivity({ label, reduceMotion }) {
 }
 
 /** The phone hands this line from activity to terminal text; Stop hides it and keeps the slot. */
-function GenerationActivity({ activity, terminal, error, stopping, reduceMotion }) {
-  const terminalText = error != null ? error : terminal;
+function GenerationActivity({ activity, terminal, stopping, reduceMotion, precededByCard, failed }) {
+  const retainedActivity = useRef(activity);
+  if (activity) retainedActivity.current = activity;
+  const terminalText = terminal;
   const active = stopping ? null : activity;
-  if (!active && terminalText == null) return null;
-  if (active && active.kind === "retry") {
-    return html`<${RetryActivity} label=${`${active.retryText || ""}...`} reduceMotion=${reduceMotion} />`;
-  }
-  return html`<div class=${`generation-activity ${terminalText != null ? "generation-terminal" : ""}`}>${terminalText != null
-    ? terminalText
-    : html`<span class="generation-dot" role="status" aria-label="Generating"></span>`}</div>`;
+  const retainLayout = stopping && activity != null;
+  if (!active && !retainLayout && terminalText == null) return null;
+  const drawn = active ?? retainedActivity.current;
+  return html`<div class=${`generation-inline-slot${precededByCard ? " after-card" : ""}`}>
+    <div class="generation-inline-draw" data-hidden=${!active} data-stopping=${stopping}
+      aria-hidden=${!active ? "true" : null}>
+      ${drawn?.kind === "retry"
+        ? html`<${RetryActivity} label=${`${drawn.retryText || ""}...`} reduceMotion=${reduceMotion} />`
+        : html`<div class="generation-activity"><span class="generation-dot" role=${active ? "status" : null} aria-label="Generating"></span></div>`}
+    </div>
+    ${terminalText != null && html`<div class="generation-activity generation-inline-terminal" data-failed=${failed}>${terminalText}</div>`}
+  </div>`;
 }
 
 /** AssistantMessageContent reads the same presentation decisions as the phone. */
-function ModelMessage({ message, wrap, display, expansion, expansionController, appearances, streaming, stopping,
+export function ModelMessage({ message, wrap, display, expansion, expansionController, appearances, streaming, stopping,
   generating, reduceMotion, deletesConversation, onOpenSheet, onOpenDetail, search, matches, onFork, onShare, births, branchControl, onDelete }) {
   const presentation = message.presentation;
   const error = message.participant === "ERROR";
   const [info, setInfo] = useState(false);
+  const [sources, setSources] = useState(null);
+  const [sourceDetail, setSourceDetail] = useState(null);
+  const [pendingSource, setPendingSource] = useState(null);
+  function activateSource(source) {
+    if (source.url && /^https?:\/\//i.test(source.url)) window.open(source.url, "_blank", "noopener,noreferrer");
+    else setSourceDetail(source);
+  }
+  function openCitation(values) {
+    if (values.length === 1) activateSource(values[0]);
+    else setSources(values);
+  }
   const dialogs = html`
-    ${info && html`<${MessageInfoDialog} message=${message} onClose=${() => setInfo(false)} />`}`;
+    ${info && html`<${MessageInfoDialog} message=${message} onClose=${() => setInfo(false)} />`}
+    ${sources && html`<${DetailSheet} display=${display} title=${`${sources.length} ${presentation.sourcesLabel}`}
+      closing=${!!pendingSource} onClose=${() => { setSources(null); if (pendingSource) { activateSource(pendingSource); setPendingSource(null); } }}>
+      <div class="citation-sources">${sources.map((source, index) => html`<button class="citation-source" type="button" key=${source.id}
+        onClick=${() => setPendingSource(source)}><span class="citation-number">${index + 1}</span><span class="citation-source-content">
+          <span class="citation-source-title">${source.title}</span>
+          ${(source.location || source.fileName) && html`<span class="citation-source-meta">${[source.fileName, source.location].filter(Boolean).join(" - ")}</span>`}
+        </span></button>`)}</div>
+    </${DetailSheet}>`}
+    ${sourceDetail && html`<${DetailSheet} display=${display} title=${sourceDetail.title} onClose=${() => setSourceDetail(null)}>
+      <div class="citation-detail">${[sourceDetail.fileName, sourceDetail.location, sourceDetail.excerpt].filter(Boolean).map(text => html`<p>${text}</p>`)}</div>
+    </${DetailSheet}>`}`;
   // The compact summary never reads as prose: MessageItem owns a pill for it instead.
   if (message.compact) {
     return html`<div class="model-message">
@@ -739,7 +844,7 @@ function ModelMessage({ message, wrap, display, expansion, expansionController, 
         case "answer":
           return html`<div class="answer-block" key=${`a${block.index}`}>
             <${Markdown} text=${block.text} wrap=${wrap} search=${search} sourceStart=${block.sourceStart}
-              streaming=${streaming && block.streaming} reduceMotion=${reduceMotion} births=${births}
+              streaming=${streaming && block.streaming} reduceMotion=${reduceMotion} births=${births} onCitation=${openCitation}
               matches=${matches.filter(match => match.start >= block.sourceStart && match.endExclusive <= block.sourceStart + block.sourceLength)} />
           </div>`;
         case "group":
@@ -750,7 +855,7 @@ function ModelMessage({ message, wrap, display, expansion, expansionController, 
             appearances=${appearances} streaming=${streaming} opensSheet=${presentation.useThinkingSheet} />`;
         case "card":
           return html`<${InfoCard} key=${`card:${block.item.detailIndex}`} block=${block}
-            messageId=${message.id} appearances=${appearances} streaming=${streaming}
+            messageId=${message.id} appearances=${appearances} streaming=${streaming} display=${display}
             onOpenDetail=${onOpenDetail} />`;
         default:
           return null;
@@ -763,21 +868,24 @@ function ModelMessage({ message, wrap, display, expansion, expansionController, 
         onOpenSheet=${onOpenSheet} onOpenDetail=${onOpenDetail}
         appearances=${appearances} streaming=${streaming} opensSheet=${presentation.useThinkingSheet} />`}
       ${presentation?.answer && html`<${Markdown} text=${presentation.answer} wrap=${wrap} search=${search} matches=${matches}
-        streaming=${streaming} reduceMotion=${reduceMotion} births=${births} />`}`;
+        streaming=${streaming} reduceMotion=${reduceMotion} births=${births} onCitation=${openCitation} />`}`;
   }
-  // assistantActionsVisible: the action line leaves while the answer still streams and returns
-  // 320 ms after it settles, never as a disabled ghost.
+  // The fixed native action slot owns layout; availability changes only paint and interaction.
   const actionsVisible = !error && !streaming && !stopping;
   return html`<div class=${error ? "model-message error" : "model-message"}>${body}<${GenerationActivity}
     activity=${presentation?.inlineActivity} terminal=${presentation?.inlineTerminalText}
-    error=${presentation?.errorBarText} stopping=${stopping}
+    stopping=${stopping} precededByCard=${presentation?.terminalFollowsCard} failed=${message.status === "ERROR"}
     reduceMotion=${!!display?.reduceMotion} />
-    ${presentation?.stoppedBar && html`<div class=${`generation-activity generation-terminal stopped-bar${presentation.terminalFollowsCard ? " after-card" : ""}`}>${t.generationStopped}</div>`}
-    ${presentation?.answerTailVisible && !stopping &&
-      html`<div class="message-actions answer-tail"><span class="generation-dot" role="status" aria-label="Generating"></span></div>`}
-    ${actionsVisible && html`<${AssistantActions} message=${message} generating=${generating}
-      reduceMotion=${reduceMotion} branchControl=${branchControl} onInfo=${() => setInfo(true)}
-      onDelete=${onDelete} onFork=${onFork} onShare=${onShare} />`}
+    ${presentation?.errorBarText != null && html`<div class=${`generation-activity generation-terminal terminal-bar${presentation.terminalFollowsCard ? " after-card" : ""}`}>${presentation.errorBarText}</div>`}
+    ${presentation?.stoppedBar && html`<div class=${`generation-activity generation-terminal terminal-bar stopped-bar${presentation.terminalFollowsCard ? " after-card" : ""}`}>${t.generationStopped}</div>`}
+    ${!error && html`<div class="message-action-slot">
+      ${streaming && presentation?.answerTailVisible && !stopping &&
+        html`<div class="message-actions answer-tail"><span class="generation-dot" role="status" aria-label="Generating"></span></div>`}
+      <${AssistantActions} message=${message} visible=${actionsVisible} generating=${generating}
+        reduceMotion=${reduceMotion} branchControl=${branchControl} onInfo=${() => setInfo(true)}
+        onSources=${() => setSources(presentation.sources)}
+        onDelete=${onDelete} onFork=${onFork} onShare=${onShare} />
+    </div>`}
     ${dialogs}</div>`;
 }
 
@@ -866,11 +974,29 @@ function RowEntrance({ enter, exiting, children }) {
     inert=${exiting} aria-hidden=${exiting ? "true" : null}>${children}</div>`;
 }
 
-/** Message rounds per history page, and how close to the top edge the next page is requested. */
-const PAGE_ROUNDS = 10;
+function PageProgress({ active, edge }) {
+  const host = useRef(null);
+  useLayoutEffect(() => {
+    const node = host.current;
+    if (active) node.style.visibility = "visible";
+    const animation = node.animate([{ opacity: getComputedStyle(node).opacity }, { opacity: active ? 1 : 0 }],
+      { duration: 180, easing: "linear", fill: "forwards" });
+    animation.onfinish = () => {
+      node.style.opacity = active ? "1" : "0";
+      if (!active) node.style.visibility = "hidden";
+      animation.cancel();
+    };
+    return () => { node.style.opacity = getComputedStyle(node).opacity; animation.cancel(); };
+  }, [active]);
+  return html`<div ref=${host} class=${`message-page-progress ${edge}`} data-loading=${active ? "true" : "false"}
+    aria-hidden=${active ? null : "true"}><span><${CircularProgress} size=${32} stroke=${3}
+      label=${active ? t.loading : null} /></span></div>`;
+}
+/** Independent token threshold and round cap; whole rounds are never split. */
+const PAGE_TOKEN_WINDOW = 256 * 1024;
+const MAX_PAGE_ROUNDS = 10;
+const MAX_PAGE_WINDOWS = 3;
 const OLDER_PAGE_EDGE_PX = 4;
-// WebUiSync.MAX_WATCHED is 48; three ids stay free for the search hit, the open sheet and a branch target.
-const WINDOW_MESSAGES = 45;
 export function MessageList({ state, label, onPageAction }) {
   const scroller = useRef(null);
   const bar = useRef(null);
@@ -913,16 +1039,15 @@ export function MessageList({ state, label, onPageAction }) {
   const watchedSheet = useRef(sheetWatchedId);
   watchedSheet.current = sheetWatchedId;
   const branch = state.branchReplacement;
-  // Paged history: the list shows the newest PAGE_ROUNDS message rounds and grows by a page each time
-  // the reader reaches the top, where a CircularProgress stands in the content like the drawer's.
-  // A round starts at a user message, so a user message and the replies under it never split across
-  // a page edge. Anything the frame must reach - the search hit, a scroll request, the open sheet,
-  // a branch being replaced - widens the window to its round first.
-  //
-  // There is no per-row hydration: every message of the requested page is watched, so the phone
-  // sends all of its bodies, and the page is only drawn once they have arrived (the CircularProgress
-  // stays at the edge meanwhile). The phone serves at most MAX_WATCHED (48) rows, so a page holds
-  // at most WINDOW_MESSAGES of them; growing past that unloads whole rounds from the far side.
+  // Costs survive body eviction, but belong only to this selected conversation. Unknown rounds
+  // hydrate in bounded adjacent batches; missing costs are never treated as free.
+  const loadCosts = useRef({ openId: state.openId, values: new Map() });
+  if (loadCosts.current.openId !== state.openId) loadCosts.current = { openId: state.openId, values: new Map() };
+  const rememberCost = message => {
+    if (Number.isFinite(message?.loadTokens)) loadCosts.current.values.set(message.id, Math.max(1, message.loadTokens));
+  };
+  state.bodies.forEach(rememberCost);
+  rememberCost(state.streaming);
   const roundStarts = state.path.reduce((starts, entry, index) => {
     if (index === 0 || entry.participant === "USER") starts.push(index);
     return starts;
@@ -936,12 +1061,46 @@ export function MessageList({ state, label, onPageAction }) {
     while (round + 1 < roundCount && roundStarts[round + 1] <= index) round += 1;
     return round;
   };
-  /** Drops whole rounds from the side away from `keep` until the page fits the watch budget. */
-  const fit = (start, end, keep) => {
-    while (end - start > 1 && roundEnd(end - 1) - roundStarts[start] > WINDOW_MESSAGES) {
-      if (keep === "start") end -= 1; else start += 1;
+  const roundCost = (round) => {
+    let total = 0;
+    for (let index = roundStarts[round]; index < roundEnd(round); index += 1) {
+      const cost = loadCosts.current.values.get(state.path[index].id);
+      if (cost == null) return null;
+      total += cost;
     }
-    return { start, end };
+    return total;
+  };
+  /** Include the first crossing round, stop at ten, or exhaust the remaining complete rounds. */
+  const fit = (start, end, keep) => {
+    if (keep === "start") end = Math.min(end, start + MAX_PAGE_ROUNDS);
+    else start = Math.max(start, end - MAX_PAGE_ROUNDS);
+    let first = keep === "start" ? start : end;
+    let last = first;
+    let tokens = 0;
+    const probes = [];
+    for (let round = keep === "start" ? start : end - 1;
+      round >= start && round < end; round += keep === "start" ? 1 : -1) {
+      const cost = roundCost(round);
+      if (cost == null) {
+        let probe = round;
+        let rows = 0;
+        // Resolve adjacent unknown costs in bounded batches, never price missing text as zero.
+        while (probe >= start && probe < end && rows < 48) {
+          const entries = state.path.slice(roundStarts[probe], roundEnd(probe));
+          if (rows && rows + entries.length > 48) break;
+          probes.push(...entries.map(entry => entry.id));
+          rows += entries.length;
+          probe += keep === "start" ? 1 : -1;
+        }
+        if (last > first) break;
+        if (keep === "start") last = round + 1; else first = round;
+        break;
+      }
+      if (keep === "start") last = round + 1; else first = round;
+      tokens += cost;
+      if (tokens > PAGE_TOKEN_WINDOW) break;
+    }
+    return { start: first, end: last, probes };
   };
   const pageEntries = (page) => (page.end > page.start
     ? state.path.slice(roundStarts[page.start], roundEnd(page.end - 1)) : []);
@@ -950,32 +1109,65 @@ export function MessageList({ state, label, onPageAction }) {
     openId: state.openId,
     startId: state.path[roundStarts[page.start]]?.id ?? null,
     endId: page.end >= roundCount ? null : state.path[roundStarts[page.end]].id,
+    lastId: state.path[roundStarts[page.end - 1]]?.id ?? null,
     keep,
   });
-  const resolvePage = (request) => {
+  const resolvePage = (request, fill = true) => {
     if (request?.openId !== state.openId) return null;
     const start = roundOfId(request.startId);
     const end = request.endId == null ? roundCount : roundOfId(request.endId);
-    return start >= 0 && end > start ? fit(start, end, request.endId == null ? "end" : request.keep) : null;
+    if (start < 0 || end <= start) return null;
+    if (!fill || request.keep === "closed") return { start, end, probes: [] };
+    return request.keep === "start" ? fit(start, roundCount, "start") : fit(0, end, "end");
   };
   const [pageRequest, setPageRequest] = useState(null);
-  let requested = resolvePage(pageRequest) ?? fit(Math.max(0, roundCount - PAGE_ROUNDS), roundCount, "end");
-  // Anything the frame must reach - the search hit, a scroll request, the open sheet, a branch being
-  // replaced - moves the page to its round first.
-  for (const id of [searchTarget.current, state.scrollRequest?.messageId, sheet?.messageId, branch?.request.oldMessageId]) {
+  const retainedPages = useRef({ openId: state.openId, windows: [] });
+  if (retainedPages.current.openId !== state.openId) retainedPages.current = { openId: state.openId, windows: [] };
+  let windows = retainedPages.current.windows.map(page => resolvePage(page, false)).filter(Boolean);
+  const retained = windows.length ? { start: windows[0].start, end: windows.at(-1).end } : null;
+  const loading = pageRequest?.openId === state.openId && pageRequest.direction;
+  let requested = loading
+    ? retained ? pageRequest.direction < 0 ? fit(0, retained.start, "end") : fit(retained.end, roundCount, "start") : fit(0, roundCount, "end")
+    : resolvePage(pageRequest) ?? (retained ? { ...retained, probes: [] } : fit(0, roundCount, "end"));
+  let targeted = false;
+  // Distant explicit targets replace the range; adjacent reader paging keeps its existing windows.
+  // A send scrolls to the newest message, so it returns to the tail page with its preceding context.
+  for (const [id, tail] of [[searchTarget.current, false], [state.scrollRequest?.messageId, true],
+    [sheet?.messageId, false], [branch?.request.oldMessageId, false]]) {
     const round = roundOfId(id);
-    if (round >= 0 && (round < requested.start || round >= requested.end)) {
-      requested = fit(round, Math.min(roundCount, round + PAGE_ROUNDS), "start");
+    if (round >= 0 && (round < requested.start || round >= requested.end) &&
+        (!retained || round < retained.start || round >= retained.end)) {
+      requested = tail ? fit(0, roundCount, "end") : fit(round, roundCount, "start");
+      targeted = true;
     }
   }
   const requestedEntries = pageEntries(requested);
-  const requestedReady = requestedEntries.every((entry) => state.streaming?.id === entry.id || state.bodies.has(entry.id));
+  const requestedReady = requested.probes.length === 0 &&
+    requestedEntries.every((entry) => state.streaming?.id === entry.id || state.bodies.has(entry.id));
   const displayedPage = useRef(null);
-  const previousPage = displayedPage.current ? resolvePage(displayedPage.current) : null;
-  const displayed = requestedReady || !previousPage ? requested : previousPage;
-  displayedPage.current = pageRequestFor(displayed, "start");
-  const pageLoading = displayed.start !== requested.start || displayed.end !== requested.end;
-  const tailReady = requestedReady && requested.end === roundCount;
+  const previousPage = retained ?? (displayedPage.current ? resolvePage(displayedPage.current, false) : null);
+  let displayed = previousPage ?? requested;
+  if (requestedReady) {
+    if (loading && retained && !targeted) {
+      windows = pageRequest.direction < 0 ? [requested, ...windows] : [...windows, requested];
+      if (windows.length > MAX_PAGE_WINDOWS) {
+        if (pageRequest.direction < 0) windows.pop(); else windows.shift();
+      }
+    } else if (!retained || targeted || pageRequest?.keep !== "closed" && !loading) {
+      windows = [requested];
+    }
+    displayed = { start: windows[0]?.start ?? requested.start, end: windows.at(-1)?.end ?? requested.end };
+    retainedPages.current.windows = windows.map(page => pageRequestFor(page, "closed"));
+  }
+  useLayoutEffect(() => {
+    if (requestedReady && (loading || targeted || pageRequest?.keep !== "closed" || pageRequest.openId !== state.openId)) {
+      setPageRequest(pageRequestFor(displayed, "closed"));
+    }
+  });
+  displayedPage.current = pageRequestFor(displayed, "closed");
+  const pageLoading = !requestedReady || (!!state.openId && state.initialToolsReady !== undefined &&
+    state.initialToolsReady !== 7 && !["failed", "deleted"].includes(state.openStatus));
+  const tailReady = requestedReady && displayed.end === roundCount;
   refreshBottom.current = () => {
     const root = scroller.current;
     if (!root) return;
@@ -999,32 +1191,86 @@ export function MessageList({ state, label, onPageAction }) {
   // A page change keeps the reader's view: the first row still on screen that the new page also
   // draws is measured before the change and put back at the same offset after it.
   const pageAnchor = useRef(null);
+  const pageInput = useRef({ direction: 0, touchY: null, openId: state.openId });
+  const pageAtEdge = useRef(null);
+  if (pageInput.current.openId !== state.openId) {
+    pageInput.current = { direction: 0, touchY: null, openId: state.openId };
+  }
   const anchoredPageKey = useRef(null);
+  const pagePaint = useRef(null);
+  const pageExits = useRef(null);
+  const pagePaintIds = useRef({ openId: state.openId, ids: new Set() });
   if (anchoredPageKey.current !== pageKey) {
+    // A layout correction is not another gesture. Only fresh input may cross the next edge.
+    pageInput.current.direction = 0;
     const root = scroller.current;
     pageAnchor.current = null;
+    pagePaint.current = null;
     if (root && anchoredPageKey.current?.startsWith(`${state.openId}:`)) {
       const kept = new Set(pagePath.map((entry) => entry.id));
       const top = root.getBoundingClientRect().top;
-      const row = [...root.querySelectorAll(".message-row")]
-        .find((node) => kept.has(node.dataset.id) && node.getBoundingClientRect().bottom > top);
+      const rows = [...root.querySelectorAll(".message-column .message-row")];
+      const row = rows.find(node => kept.has(node.dataset.id) && node.getBoundingClientRect().bottom > top);
       if (row) pageAnchor.current = { id: row.dataset.id, offset: row.getBoundingClientRect().top - top };
+      pagePaint.current = { openId: state.openId, incoming: new Set(pagePath.filter(entry =>
+        !pagePaintIds.current.ids.has(entry.id)).map(entry => entry.id)), outgoing: rows.filter(node => {
+          const bounds = node.getBoundingClientRect();
+          return !kept.has(node.dataset.id) && bounds.bottom > top && bounds.top < top + root.clientHeight;
+        }).map(node => ({ node: node.cloneNode(true), bounds: node.getBoundingClientRect() })) };
     }
     anchoredPageKey.current = pageKey;
   }
+  pagePaintIds.current = { openId: state.openId, ids: new Set(pagePath.map(entry => entry.id)) };
   useLayoutEffect(() => {
     const root = scroller.current;
     const anchor = pageAnchor.current;
     pageAnchor.current = null;
-    if (!root || !anchor || pinned.current) return;
+    if (!root) return;
+    const column = root.querySelector(".message-column");
+    column?.style.removeProperty("padding-bottom");
+    if (!anchor || pinned.current) return;
     const row = [...root.querySelectorAll(".message-row")].find((node) => node.dataset.id === anchor.id);
-    if (row) root.scrollTop += row.getBoundingClientRect().top - root.getBoundingClientRect().top - anchor.offset;
+    if (row) {
+      const target = root.scrollTop + row.getBoundingClientRect().top - root.getBoundingClientRect().top - anchor.offset;
+      const missing = target - (root.scrollHeight - root.clientHeight);
+      // A short replacement needs trailing room, otherwise the browser clamps away the anchor.
+      if (column && missing > 0) {
+        column.style.paddingBottom = `${parseFloat(getComputedStyle(column).paddingBottom) + missing}px`;
+      }
+      root.scrollTop = target;
+    }
   }, [pageKey]);
-  // A reply streaming below a page the reader moved away from brings the page back to the newest round.
-  const streamingRound = state.streaming ? roundOfId(state.streaming.id) : -1;
-  useEffect(() => {
-    if (streamingRound >= 0 && streamingRound >= requested.end) setPageRequest(null);
-  }, [streamingRound, requested.end]);
+  useLayoutEffect(() => {
+    const paint = pagePaint.current;
+    pagePaint.current = null;
+    const root = scroller.current, host = pageExits.current;
+    if (!root || !host || !paint || paint.openId !== state.openId) return;
+    for (const row of root.querySelectorAll(".message-column .message-row")) {
+      if (paint.incoming.has(row.dataset.id)) row.parentElement.animate([{ opacity: 0 }, { opacity: 1 }],
+        { duration: 180, easing: "linear" });
+    }
+    host.replaceChildren();
+    if (!paint.outgoing.length) { host.style.top = ""; host.style.height = ""; return; }
+    const viewport = root.getBoundingClientRect();
+    host.style.top = `${root.scrollTop}px`;
+    host.style.height = `${root.clientHeight}px`;
+    for (const { node, bounds } of paint.outgoing) {
+      node.className = "message-page-snapshot";
+      node.removeAttribute("data-id");
+      node.setAttribute("inert", "");
+      node.setAttribute("aria-hidden", "true");
+      Object.assign(node.style, { top: `${bounds.top - viewport.top}px`, left: `${bounds.left - viewport.left}px`,
+        width: `${bounds.width}px`, height: `${bounds.height}px` });
+      host.append(node);
+      const fade = node.animate([{ opacity: 1 }, { opacity: 0 }],
+        { duration: 180, easing: "linear", fill: "forwards" });
+      fade.onfinish = () => {
+        node.remove(); fade.cancel();
+        if (!host.childElementCount) { host.style.top = ""; host.style.height = ""; }
+      };
+    }
+  }, [pageKey]);
+  // Explicit history requests are not displaced by an out-of-page streaming reply.
   const ids = pagePath.map((entry) => entry.id).join(",");
   const branchVisual = useRef({ id: null, entries: [], bodies: new Map() });
   const branchScroll = useRef(null);
@@ -1073,7 +1319,8 @@ export function MessageList({ state, label, onPageAction }) {
   const tailAnchorId = (() => {
     for (let index = pagePath.length - 1; index >= 0; index -= 1) {
       const entry = pagePath[index];
-      if (entry.participant === "USER" || state.bodies.get(entry.id)?.compact) return entry.id;
+      const message = state.streaming?.id === entry.id ? state.streaming : state.bodies.get(entry.id);
+      if (entry.participant === "USER" || message?.compact) return entry.id;
     }
     return null;
   })();
@@ -1095,7 +1342,8 @@ export function MessageList({ state, label, onPageAction }) {
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(root);
-    observer.observe(column);
+    // Composer/tools clearance changes padding without resizing the column's content box.
+    observer.observe(column, { box: "border-box" });
     return () => observer.disconnect();
   }, [tailAnchorId, ids]);
   useLayoutEffect(() => {
@@ -1176,16 +1424,19 @@ export function MessageList({ state, label, onPageAction }) {
 
   // Chrome runs no CSS transition on its own scrollbar, so the animated bar is drawn beside it; the
   // native bar stays in place and keeps every hit target.
-  useEffect(() => attachScrollbar(scroller.current, bar.current), []);
+  useEffect(() => attachScrollbar(scroller.current, bar.current, direction => {
+    pageInput.current.direction = direction;
+    pageAtEdge.current?.();
+  }), []);
 
-  // The whole requested page is watched (targets first, then newest to oldest, since the phone keeps
-  // the first MAX_WATCHED ids); the page still on screen keeps its bodies until the next one lands.
-  const requestedIds = requestedEntries.map((entry) => entry.id).join(",");
+  // The page and its next unknown round share the existing payload watch. Keep the displayed
+  // page subscribed until replacement is ready, and retain both through idle-cache eviction.
+  const requestedIds = [...new Set([...requestedEntries.map(entry => entry.id), ...requested.probes])].join(",");
   useEffect(() => {
     const requestedList = requestedIds ? requestedIds.split(",") : [];
-    sync.keep([...pagePath.map((entry) => entry.id), ...requestedList]);
-    sync.watch([...new Set([searchTarget.current, sheetWatchedId, branchTarget, ...requestedList.reverse()]
-      .filter(Boolean))]);
+    const retained = [...pagePath.map(entry => entry.id), ...requestedList];
+    sync.keep(retained);
+    sync.watch([...new Set([searchTarget.current, sheetWatchedId, branchTarget, ...retained].filter(Boolean))]);
   }, [requestedIds, ids, sheetWatchedId, searchTarget.current, branchTarget]);
 
   useLayoutEffect(() => {
@@ -1222,7 +1473,7 @@ export function MessageList({ state, label, onPageAction }) {
     bottomRequested.current = true;
     setBottomVisible(false);
     if (tailReady) bottomSeek.current?.();
-    else setPageRequest(pageRequestFor(fit(Math.max(0, roundCount - PAGE_ROUNDS), roundCount, "end"), "end"));
+    else setPageRequest(pageRequestFor(fit(0, roundCount, "end"), "end"));
   }
 
   // The app opens a conversation at its newest message. Row bodies arrive after the path, so
@@ -1245,7 +1496,8 @@ export function MessageList({ state, label, onPageAction }) {
     const fading = switching?.phase === "covering" || switching?.phase === "revealing";
     const request = state.scrollRequest;
     let seekRequested = false;
-    if (request && state.openStatus === "ready" && state.path.some((entry) => entry.id === request.messageId)) {
+    if (request && requestedReady && state.openStatus === "ready" &&
+        pagePath.some((entry) => entry.id === request.messageId)) {
       pinned.current = true;
       sync.consumeScroll(request);
       seekRequested = true;
@@ -1409,6 +1661,11 @@ export function MessageList({ state, label, onPageAction }) {
 
     const settle = () => {
       frame = 0;
+      // The opening page may still grow upward; settling earlier would leave the reader at its old offset.
+      if (!requestedReady) {
+        previousLayout = null;
+        return;
+      }
       const viewport = root.getBoundingClientRect();
       const rows = [...column.querySelectorAll(".message-row")].filter((row) => {
         const bounds = row.getBoundingClientRect();
@@ -1419,10 +1676,12 @@ export function MessageList({ state, label, onPageAction }) {
         return;
       }
       const layout = `${root.scrollHeight}:${root.clientHeight}:${root.scrollTop}`;
-      if (layout === previousLayout && Math.abs(root.scrollHeight - root.clientHeight - root.scrollTop) <= 1) {
+      const atBottom = Math.max(0, root.scrollHeight - root.clientHeight - root.scrollTop) <= 1;
+      if (layout === previousLayout && atBottom) {
         setSettledOpenId(state.openId);
       } else {
         previousLayout = layout;
+        if (pinned.current) wake();
         frame = requestAnimationFrame(settle);
       }
     };
@@ -1436,7 +1695,7 @@ export function MessageList({ state, label, onPageAction }) {
         if (!request.scrollFinished && row && state.bodies.has(branchTarget)) {
           if (branchScroll.current?.id !== request.id || branchScroll.current.target !== branchTarget) {
             branchScroll.current = { id: request.id, target: branchTarget, started: performance.now(),
-              from: root.scrollTop, distance: row.getBoundingClientRect().top - root.getBoundingClientRect().top,
+              from: root.scrollTop, distance: row.getBoundingClientRect().top - root.getBoundingClientRect().top - parseFloat(getComputedStyle(column).paddingTop),
               done: false };
           }
           const motion = branchScroll.current;
@@ -1462,15 +1721,16 @@ export function MessageList({ state, label, onPageAction }) {
         const bottom = Math.min(viewport.bottom, root.closest(".chat").querySelector(".composer-host").getBoundingClientRect().top);
         const center = (top + bottom) / 2;
         const geometry = new Map();
-        root.querySelectorAll("mark[data-search-key]").forEach(mark => {
-          for (const rect of mark.getClientRects()) {
-            const old = geometry.get(mark.dataset.searchKey);
-            geometry.set(mark.dataset.searchKey, {
+        for (const range of CSS.highlights.get("agora-search") ?? []) {
+          if (!root.contains(range.startContainer)) continue;
+          for (const rect of range.getClientRects()) {
+            const old = geometry.get(range.searchKey);
+            geometry.set(range.searchKey, {
               top: Math.min(old?.top ?? rect.top, rect.top),
               bottom: Math.max(old?.bottom ?? rect.bottom, rect.bottom),
             });
           }
-        });
+        }
         const midpoint = bounds => (bounds.top + bounds.bottom) / 2;
         if (search.index < 0) {
           let nearest = -1, distance = Infinity;
@@ -1542,7 +1802,8 @@ export function MessageList({ state, label, onPageAction }) {
       if (covered && !coveredOpen) return;
       if (pending && !frame) frame = requestAnimationFrame(settle);
     };
-    const release = () => {
+    const release = (event) => {
+      if (["pointerdown", "touchstart"].includes(event.type)) pageInput.current.direction = 0;
       if (branch && !branch.request.scrollFinished && !branchScroll.current?.done) {
         branchScroll.current = { id: branch.request.id, target: branchTarget, done: true };
         sync.branchAck('branch_scroll', branch, false);
@@ -1557,6 +1818,7 @@ export function MessageList({ state, label, onPageAction }) {
       cancelAnimationFrame(seekFrame);
       seekFrame = 0;
       refreshBottom.current?.();
+      pageAtEdge.current?.();
     };
     const follow = new ResizeObserver(followBottom);
     follow.observe(column);
@@ -1685,29 +1947,62 @@ export function MessageList({ state, label, onPageAction }) {
     return () => { if (fade) { fade.onfinish = null; fade.cancel(); clear(); } };
   }, [frameKind]);
 
+  pageAtEdge.current = () => {
+    const root = scroller.current;
+    if (!root) return;
+    const direction = pageInput.current.direction;
+    if (covered || pinned.current || bottomMotion.current || branch || search?.query.trim()) return;
+    if (pageLoading || !requestedReady) {
+      // Reversing during hydration cancels the pending edge, not the reader's retained windows.
+      if (loading && direction && direction !== pageRequest.direction) {
+        setPageRequest(pageRequestFor(displayed, "closed"));
+      }
+      return;
+    }
+    if (hasOlderRounds && direction < 0 && root.scrollTop <= OLDER_PAGE_EDGE_PX) {
+      pageInput.current.direction = 0;
+      setPageRequest({ openId: state.openId, direction: -1 });
+    } else if (hasNewerRounds && direction > 0 && root.scrollHeight - root.clientHeight - root.scrollTop <= OLDER_PAGE_EDGE_PX) {
+      pageInput.current.direction = 0;
+      setPageRequest({ openId: state.openId, direction: 1 });
+    }
+  };
   return html`
     <section class="messages" ref=${scroller} aria-label=${label} aria-busy=${covered} inert=${covered}
+      onWheel=${event => { pageInput.current.direction = Math.sign(event.deltaY); pageAtEdge.current?.(); }}
+      ontouchstart=${event => { pageInput.current.touchY = event.touches[0]?.clientY ?? null; }}
+      ontouchmove=${event => {
+        const y = event.touches[0]?.clientY;
+        if (y != null && pageInput.current.touchY != null) {
+          pageInput.current.direction = Math.sign(pageInput.current.touchY - y);
+          pageInput.current.touchY = y;
+          pageAtEdge.current?.();
+        }
+      }}
+      onKeyDown=${event => {
+        const tag = event.target.tagName;
+        if (["INPUT", "TEXTAREA", "SELECT"].includes(tag) || event.target.isContentEditable) return;
+        if (["ArrowUp", "PageUp", "Home"].includes(event.key)) pageInput.current.direction = -1;
+        else if (["ArrowDown", "PageDown", "End", " "].includes(event.key)) {
+          pageInput.current.direction = event.key === " " && event.shiftKey ? -1 : 1;
+        }
+        pageAtEdge.current?.();
+      }}
       onScroll=${(event) => {
         const root = event.currentTarget;
         const latch = bottomVisibility.current;
+        const delta = root.scrollTop - latch.top;
         if (!covered && !pageLoading && !bottomMotion.current && !branch && !search?.query.trim()) {
-          const delta = root.scrollTop - latch.top;
           if (delta) latch.travel = Math.sign(delta) === Math.sign(latch.travel) ? latch.travel + delta : delta;
           if (Math.abs(latch.travel) >= 32) { latch.heading = latch.travel > 0; latch.travel = 0; }
         }
         latch.top = root.scrollTop;
         refreshBottom.current?.();
-        if (covered || pageLoading) return;
-        if (hasOlderRounds && root.scrollTop <= OLDER_PAGE_EDGE_PX) {
-          setPageRequest(pageRequestFor(fit(Math.max(0, displayed.start - PAGE_ROUNDS), displayed.end, "start"), "start"));
-        } else if (hasNewerRounds && root.scrollHeight - root.clientHeight - root.scrollTop <= OLDER_PAGE_EDGE_PX) {
-          setPageRequest(pageRequestFor(fit(displayed.start, Math.min(roundCount, displayed.end + PAGE_ROUNDS), "end"), "end"));
-        }
+        pageAtEdge.current?.();
       }}>
       ${showWelcome ? html`<${ChatWelcome} reduceMotion=${!!state.display?.reduceMotion} />`
         : html`<div class="message-column">
-        ${hasOlderRounds && html`<div class="message-page-progress" key="older-page">
-          <${CircularProgress} size=${32} stroke=${3} label=${t.loading} /></div>`}
+        <${PageProgress} key="older-page" edge="older" active=${!covered && !!loading && loading < 0 && pageLoading} />
         ${renderedPath.map((entry, index) => html`
           <${RowEntrance} key=${visualKeys.current.get(entry.id) || entry.id} enter=${shouldEnter(entry)}
             exiting=${exitIds.has(entry.id)}>
@@ -1720,13 +2015,13 @@ export function MessageList({ state, label, onPageAction }) {
             appearances=${appearances.current} glyphBirths=${glyphBirths.current} conversationId=${state.openId}
             onOpenSheet=${openSheet} onOpenDetail=${openDetail}
             streaming=${state.streaming?.id === entry.id}
-            stopping=${!!state.composer?.stopping}
+            stopping=${!!state.composer?.stopping && state.streaming?.id === entry.id}
             body=${exitIds.has(entry.id) ? branchVisual.current.bodies.get(entry.id)
               : state.streaming?.id === entry.id ? state.streaming : state.bodies.get(entry.id)} /></${RowEntrance}>`)}
         ${!hasNewerRounds && html`<div class="message-tail-minimum" key="tail-minimum" ref=${tailSpacer} aria-hidden="true"></div>`}
-        ${hasNewerRounds && html`<div class="message-page-progress" key="newer-page">
-          <${CircularProgress} size=${32} stroke=${3} label=${t.loading} /></div>`}
+        <${PageProgress} key="newer-page" edge="newer" active=${!covered && !!loading && loading > 0 && pageLoading} />
       </div>`}
+      <div key="history-exit" class="message-page-exits" ref=${pageExits} aria-hidden="true" inert></div>
       <div key="page-exit" class="chat-frame-exits" ref=${exitHost} aria-hidden="true"></div>
     </section>
     <div class="scrollbar-overlay" ref=${bar} aria-hidden="true"><span></span></div>

@@ -14,6 +14,22 @@ page plus the requested top candidates; corpus growth must not translate into An
   text, and synthetic tool/result/Compact rows.
 - Literal search, expanded search context and read_conversation also exclude synthetic Compact
   summaries. Branch traversal may cross these rows but must not return their bodies as messages.
+- Global history tools and drawer search exclude child conversations through root-only database
+  eligibility, before count, pagination, literal/citation search and semantic ranking. A child must
+  never displace a visible root in a limited page or top-K result. Final semantic hydration rechecks
+  root eligibility. Existing child content and embeddings remain stored; this read boundary does
+  not change cache admission or delete data.
+- `read_conversation` admits a child only when its durable `parentConversationId` equals the calling
+  generation's conversation ID. Missing caller identity, unrelated roots, child self-reads and sibling
+  reads cannot authorize that child. Unauthorized and missing IDs return the same `not_found` result
+  before loading topology or message bodies. Ordinary top-level history reads remain available.
+  Parent-owned child discovery continues through `list_agents`, never `list_conversations`.
+- Every `list_conversations` item includes a JSON boolean `is_generating`. Each call captures one
+  current snapshot from the existing generation registry plus active automation ownership, matching
+  the native drawer indicator. Idle, completed, failed and stopped owners return false once their
+  canonical execution ownership settles. Stored orphaned Runs do not imply live generation. This
+  projection must not open conversations, instantiate runtime states or load message bodies, and
+  active children remain excluded from the list.
 - Compact summaries are also ineligible for cache admission, reconciliation, embedding generation
   and transactional embedding commit. Existing Compact cache rows are excluded from counts/ranking
   and reclaimed by the canonical bounded maintenance path, never by a search or startup scan.

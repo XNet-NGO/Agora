@@ -11,7 +11,7 @@
     <string name="remote_sync_hint">Lass diese Sitzung in Codex geöffnet. Antworten werden nach dem Speichern synchronisiert.</string>
     <string name="remote_refresh">Aktualisieren</string>
     <string name="remote_load_more">Mehr Laden</string>
-    <string name="remote_check">Ich Habe Geprüft</string>
+    <string name="remote_check">Senden Erlauben</string>
     <string name="remote_confirm">Weiter Senden?</string>
     <string name="remote_remove">Verbindung entfernen</string>
     <string name="remote_add_device">Gerät hinzufügen</string>

@@ -126,7 +126,7 @@ internal suspend fun ConversationCompactController.continueTaskGenerations(
             )
         } ?: return StandardCompactContinuationResult(lastModelMessageId)
         launch.job.join()
-        state.awaitSendAvailable()
+        state.awaitGenerationSettled(launch.uiToken)
         val continuationMessage = convRepo.getMessage(launch.modelMessageId)
         if (continuationMessage?.status == MessageStatus.STOPPED) {
             return StandardCompactContinuationResult(lastModelMessageId, aborted = true)

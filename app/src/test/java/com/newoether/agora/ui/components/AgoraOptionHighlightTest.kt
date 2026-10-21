@@ -19,12 +19,17 @@ class AgoraOptionHighlightTest {
     }
 
     @Test
-    fun dialogAndSheetOptionRowsUseTheSharedHighlight() {
+    fun knownOptionRowsKeepUsingTheSharedHighlight() {
         val ui = File("src/main/java/com/newoether/agora/ui")
-        // File -> (dialog rows, sheet rows) that must use the shared highlight.
+        // Scoped call-site regressions; completeness is established by the modal-owner audit.
         val expected = mapOf(
+            "chat/AdvancedSettingsDialog.kt" to (2 to 0),
             "components/SystemPromptPickerDialog.kt" to (2 to 0),
             "settings/datacontrol/SettingsDataControlPage.kt" to (2 to 0),
+            "settings/datacontrol/NativeDataSelectionDialogs.kt" to (1 to 0),
+            "settings/SettingsContextPage.kt" to (1 to 0),
+            "settings/SettingsSubagentPage.kt" to (3 to 0),
+            "settings/SettingsSearchPage.kt" to (0 to 1),
             "settings/SettingsImageGenPage.kt" to (2 to 0),
             "settings/SettingsModelsPage.kt" to (1 to 0),
             "settings/SettingsTitleGenPage.kt" to (2 to 0),

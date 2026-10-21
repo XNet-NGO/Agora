@@ -10,6 +10,7 @@ internal data class RemoteSession(
     val id: String, val title: String, val cwd: String, val updatedAt: Long,
     val status: String? = null,
     @kotlinx.serialization.Transient val listCursor: String? = null,
+    @kotlinx.serialization.Transient val acceptedTurnId: String? = null,
 )
 @Serializable
 internal data class RemoteSessionStatus(
@@ -51,7 +52,11 @@ internal data class RemoteConversationPage(
     val runtime: RemoteRuntime? = null, val pageCursor: String? = null,
     val continuationCursor: String? = null,
     val nodes: List<RemoteMessageNode> = emptyList(),
+    val inputReceipts: List<RemoteInputReceipt> = emptyList(),
 )
+/** Input confirmed by the native owner, independent of bounded presentation pages. */
+@Serializable
+internal data class RemoteInputReceipt(val clientId: String, val turnId: String, val messageId: String)
 @Serializable
 internal data class RemoteRuntime(
     val status: String, val activeTurnId: String? = null, val model: String? = null,

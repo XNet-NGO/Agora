@@ -149,4 +149,5 @@
         <item quantity="one">Found %1$d result</item>
         <item quantity="other">Found %1$d results</item>
     </plurals>
+    <string name="tool_json_empty_container">No content</string>
 </resources>

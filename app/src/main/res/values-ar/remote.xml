@@ -11,7 +11,7 @@
     <string name="remote_sync_hint">أبقِ هذه الجلسة مفتوحة في Codex. تتم مزامنة الردود بعد حفظها.</string>
     <string name="remote_refresh">تحديث</string>
     <string name="remote_load_more">تحميل المزيد</string>
-    <string name="remote_check">لقد تحققت</string>
+    <string name="remote_check">السماح بالإرسال</string>
     <string name="remote_confirm">متابعة الإرسال؟</string>
     <string name="remote_remove">إزالة الاتصال</string>
     <string name="remote_add_device">إضافة جهاز</string>

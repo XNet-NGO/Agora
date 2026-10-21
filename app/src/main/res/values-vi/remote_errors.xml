@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="remote_failed">Không thể hoàn tất thao tác từ xa. Hãy xem chi tiết lỗi.</string>
-    <string name="remote_unknown">Chưa xác nhận được việc gửi. Hãy kiểm tra cuộc trò chuyện trong Codex trước khi gửi lại.</string>
+    <string name="remote_unknown">Chưa xác nhận việc gửi. Kiểm tra Codex trước khi gửi lại. “Cho phép gửi” chỉ xóa cảnh báo này, không gửi tin nhắn.</string>
     <string name="remote_rejected">Codex không chấp nhận tin nhắn. Hãy xem chi tiết lỗi trước khi thử lại.</string>
     <string name="remote_storage_failed">Agora không thể truy cập dữ liệu Remote cục bộ. Hãy kiểm tra dung lượng trống.</string>
     <string name="remote_network_failed">Không thể kết nối Filo. Hãy kiểm tra máy đích, địa chỉ dịch vụ và mạng.</string>

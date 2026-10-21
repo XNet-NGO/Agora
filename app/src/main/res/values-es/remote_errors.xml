@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="remote_failed">No se pudo completar la acción remota. Consulta los detalles del error.</string>
-    <string name="remote_unknown">El envío no está confirmado. Revisa la conversación en Codex antes de volver a enviar.</string>
+    <string name="remote_unknown">Envío sin confirmar. Revisa Codex antes de volver a enviar. «Permitir enviar» solo quita este aviso; no envía mensajes.</string>
     <string name="remote_rejected">Codex no aceptó el mensaje. Consulta el error antes de intentarlo de nuevo.</string>
     <string name="remote_storage_failed">Agora no puede acceder a los datos remotos locales. Comprueba el espacio disponible.</string>
     <string name="remote_network_failed">No se puede conectar con Filo. Comprueba el equipo de destino, la dirección y la red.</string>

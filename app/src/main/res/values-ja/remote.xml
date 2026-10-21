@@ -11,7 +11,7 @@
     <string name="remote_sync_hint">Codex でこのセッションを開いたままにしてください。返信は保存後に同期されます。</string>
     <string name="remote_refresh">更新</string>
     <string name="remote_load_more">さらに読み込む</string>
-    <string name="remote_check">確認しました</string>
+    <string name="remote_check">送信を許可</string>
     <string name="remote_confirm">送信を続けますか？</string>
     <string name="remote_remove">接続を削除</string>
     <string name="remote_add_device">デバイスを追加</string>

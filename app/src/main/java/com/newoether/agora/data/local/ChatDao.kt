@@ -37,13 +37,15 @@ interface ChatDao :
     ChatProviderContextDao,
     ChatSearchDao,
     ChatMediaReferencesDao,
+    ChatTodoDao,
+    ChatSubagentDao,
     NewChatPersistDao {
-    // Task executions always remain in their owning Task's History.
-    @Query("SELECT id, title, systemPromptId, modelId, taskId, origin, graduated, hasUnreadGeneration, isPinned, selectedBranchesJson FROM conversations WHERE taskId IS NULL ORDER BY lastUpdated DESC")
+    // Navigation never reads branch payloads; selected-owner observation owns them.
+    @Query("SELECT id, title, systemPromptId, modelId, taskId, origin, graduated, hasUnreadGeneration, isPinned, NULL AS selectedBranchesJson, parentConversationId FROM conversations WHERE taskId IS NULL AND parentConversationId IS NULL ORDER BY lastUpdated DESC")
     fun getAllConversations(): Flow<List<ChatConversation>>
-    @Query("SELECT id, title, hasUnreadGeneration, isPinned FROM conversations WHERE taskId IS NULL ORDER BY isPinned DESC, lastUpdated DESC, id LIMIT :limit")
+    @Query("SELECT id, title, hasUnreadGeneration, isPinned FROM conversations WHERE taskId IS NULL AND parentConversationId IS NULL ORDER BY isPinned DESC, lastUpdated DESC, id LIMIT :limit")
     fun observeDrawerConversations(limit: Int): Flow<List<DrawerConversationRow>>
-    @Query("SELECT id, title, hasUnreadGeneration, isPinned FROM conversations WHERE taskId IS NULL AND id IN (:ids)")
+    @Query("SELECT id, title, hasUnreadGeneration, isPinned FROM conversations WHERE taskId IS NULL AND parentConversationId IS NULL AND id IN (:ids)")
     suspend fun getDrawerConversations(ids: List<String>): List<DrawerConversationRow>
 
     @Query("SELECT * FROM conversations WHERE taskId = :taskId ORDER BY lastUpdated DESC")
@@ -673,6 +675,9 @@ interface ChatDao :
 
     @Query("SELECT * FROM messages WHERE id IN (:ids)")
     suspend fun getMessagesByIds(ids: List<String>): List<MessageEntity>
+
+    @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND id IN (:ids)")
+    fun observeMessagesByIds(conversationId: String, ids: List<String>): Flow<List<MessageEntity>>
 
     @Query("UPDATE conversations SET draftText = :text, draftAttachments = :attachments, dataChangedAt = :at WHERE id = :id")
     suspend fun updateDraft(id: String, text: String, attachments: String?, at: Long)

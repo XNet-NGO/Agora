@@ -486,6 +486,9 @@
     <string name="settings_interaction">Interação</string>
     <string name="settings_interaction_desc">Perguntas que o assistente faz a você</string>
     <string name="ask_user_enable">Permitir que o assistente pergunte</string>
+    <string name="ask_user_timeout">Tempo limite</string>
+    <string name="ask_user_timeout_desc">Tempo de espera para um grupo de perguntas bloqueantes. Perguntas sem resposta são ignoradas quando o tempo acaba.</string>
+    <string name="ask_user_timeout_minutes">%1$d min</string>
     <string name="ask_user_enable_desc">Dá ao modelo uma ferramenta para perguntar e esperar sua escolha</string>
     <string name="unsaved_changes_title">Alterações não salvas</string>
     <string name="unsaved_changes_message">Há alterações não salvas. Descartá-las?</string>

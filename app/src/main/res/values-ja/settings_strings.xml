@@ -486,6 +486,9 @@
     <string name="settings_interaction">インタラクション</string>
     <string name="settings_interaction_desc">アシスタントがあなたに尋ねる質問</string>
     <string name="ask_user_enable">アシスタントの質問を許可</string>
+    <string name="ask_user_timeout">タイムアウト</string>
+    <string name="ask_user_timeout_desc">応答待ちの質問グループを待機する時間です。時間切れになると未回答の質問はスキップされます。</string>
+    <string name="ask_user_timeout_minutes">%1$d 分</string>
     <string name="ask_user_enable_desc">モデルが質問を出してあなたの選択を待てるツールを有効にします</string>
     <string name="unsaved_changes_title">未保存の変更</string>
     <string name="unsaved_changes_message">保存されていない変更があります。破棄しますか？</string>

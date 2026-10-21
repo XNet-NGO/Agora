@@ -503,6 +503,9 @@
     <string name="settings_interaction">Interaction</string>
     <string name="settings_interaction_desc">Questions the assistant asks you</string>
     <string name="ask_user_enable">Let the assistant ask me</string>
+    <string name="ask_user_timeout">Timeout</string>
+    <string name="ask_user_timeout_desc">How long to wait for a blocking question set. Unanswered questions are skipped when time runs out.</string>
+    <string name="ask_user_timeout_minutes">%1$d min</string>
     <string name="ask_user_enable_desc">Gives the model a tool to ask you a question and wait for your choice</string>
     <string name="unsaved_changes_title">Unsaved changes</string>
     <string name="unsaved_changes_message">You have unsaved changes. Discard them?</string>

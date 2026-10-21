@@ -99,4 +99,5 @@
         <item quantity="one">Encontrado %1$d resultado</item>
         <item quantity="other">Encontrados %1$d resultados</item>
     </plurals>
+    <string name="tool_json_empty_container">Sem conteúdo</string>
 </resources>

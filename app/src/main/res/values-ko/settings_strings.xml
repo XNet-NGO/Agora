@@ -486,6 +486,9 @@
     <string name="settings_interaction">상호작용</string>
     <string name="settings_interaction_desc">어시스턴트가 보내는 질문</string>
     <string name="ask_user_enable">어시스턴트 질문 허용</string>
+    <string name="ask_user_timeout">대기 시간</string>
+    <string name="ask_user_timeout_desc">응답이 필요한 질문 그룹을 기다리는 시간입니다. 시간이 지나면 답하지 않은 질문은 건너뜁니다.</string>
+    <string name="ask_user_timeout_minutes">%1$d분</string>
     <string name="ask_user_enable_desc">모델이 질문을 보내고 선택을 기다릴 수 있게 합니다</string>
     <string name="unsaved_changes_title">저장되지 않은 변경사항</string>
     <string name="unsaved_changes_message">저장되지 않은 변경사항이 있습니다. 삭제하시겠습니까?</string>

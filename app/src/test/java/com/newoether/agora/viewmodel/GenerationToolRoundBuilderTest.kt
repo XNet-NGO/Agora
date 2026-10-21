@@ -62,6 +62,19 @@ class GenerationToolRoundBuilderTest {
         )
     }
 
+    @Test(expected = IllegalStateException::class)
+    fun `oversized committed body cannot degrade to a null reference target`() {
+        GenerationToolRoundBuilder().build(
+            previousMessageId = "root",
+            conversationId = "conversation",
+            runId = "run",
+            modelName = "model",
+            providerName = "provider",
+            calls = listOf(ToolCallData("lookup", "x".repeat(600_001), "done", toolCallId = "call")),
+            completedSegments = emptyList(),
+        )
+    }
+
     @Test
     fun `builds matching provider path and Room graph with deterministic hierarchy`() {
         val ids = ArrayDeque(listOf("tool", "result-1", "result-2"))

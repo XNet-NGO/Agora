@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="remote_failed">Не удалось выполнить удалённое действие. Проверьте сведения об ошибке.</string>
-    <string name="remote_unknown">Доставка не подтверждена. Перед повторной отправкой проверьте диалог в Codex.</string>
+    <string name="remote_unknown">Доставка не подтверждена. Проверьте Codex перед повторной отправкой. «Разрешить отправку» только убирает предупреждение и ничего не отправляет.</string>
     <string name="remote_rejected">Codex не принял сообщение. Перед новой попыткой проверьте сведения об ошибке.</string>
     <string name="remote_storage_failed">Agora не может открыть локальные данные Remote. Проверьте свободное место.</string>
     <string name="remote_network_failed">Не удалось подключиться к Filo. Проверьте целевой компьютер, адрес службы и сеть.</string>

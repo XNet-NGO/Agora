@@ -91,6 +91,8 @@ data class MessageSegment(
      * Displayed only in the Image Transcription thinking block, never in the tool card.
      */
     val toolTranscription: String? = null,
+    /** Committed protocol row owning this tool body; root checkpoints retain only its call reference. */
+    val toolRoundId: String? = null,
     /** Raw provider protocol items needed to reconstruct a stateless tool continuation. */
     val responseOutputItems: List<JsonObject> = emptyList(),
     /** Provider identity that owns [responseOutputItems]; foreign transports must ignore them. */
@@ -221,6 +223,7 @@ data class ChatConversation(
     val hasUnreadGeneration: Boolean = false,
     val isPinned: Boolean = false,
     val selectedBranchesJson: String? = null,
+    val parentConversationId: String? = null,
 )
 
 fun ChatMessage.isContextCompact(): Boolean =

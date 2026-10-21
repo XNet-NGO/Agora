@@ -128,4 +128,5 @@
     <plurals name="tool_web_search_result_count">
         <item quantity="other">找到 %1$d 条结果</item>
     </plurals>
+    <string name="tool_json_empty_container">无内容</string>
 </resources>

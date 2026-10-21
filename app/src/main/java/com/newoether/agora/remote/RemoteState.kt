@@ -11,10 +11,10 @@ internal data class RemoteDevice(
     val status: RemoteDeviceStatus = RemoteDeviceStatus.IDLE, val failure: RemoteFailure? = null,
 )
 internal data class RemoteNotice(val stage: String, val failure: RemoteFailure, val selection: Long, val detail: String? = null, val code: String? = null) {
-    val canRetryRead: Boolean get() = stage in setOf("restore_failed", "check_failed", "read_failed", "page_failed", "payload_failed")
+    val canRetryRead: Boolean get() = stage in setOf("restore_failed", "check_failed", "read_failed", "page_failed", "payload_failed", "models_failed")
 }
 internal enum class RemoteDelivery { SUBMITTING, ACCEPTED, DELIVERED, REJECTED, UNKNOWN }
-internal data class RemoteAttempt(val clientId: String, val text: String, val delivery: RemoteDelivery)
+internal data class RemoteAttempt(val clientId: String, val text: String, val delivery: RemoteDelivery, val turnId: String? = null)
 internal data class RemoteState(
     val devices: List<RemoteDevice> = emptyList(), val deviceId: String? = null,
     val sessions: List<RemoteSession> = emptyList(), val sessionCursor: String? = null,
@@ -37,7 +37,8 @@ internal data class RemoteState(
     val sessionStatuses: Map<String, RemoteSessionStatus> = emptyMap(),
     val viewedTurns: Map<String, String> = emptyMap(),
     val settingsRevision: Long = 0,
-    val stoppingOwner: String? = null, val stoppingTurnId: String? = null,
+    val optimisticSettings: Map<String, RemoteSettings> = emptyMap(),
+    val stoppingOwner: String? = null, val stoppingTurnId: String? = null, val stoppingTurnEnded: Boolean = false,
 ) {
     val error: Boolean get() = failure != null
     val owner: String? get() = session?.let {
@@ -55,14 +56,26 @@ internal data class RemoteState(
         draftSettings.model ?: models.firstOrNull { it.isDefault }?.id
     } else runtime?.model ?: lastKnownModel
     val settingsModel: RemoteModel? get() = models.firstOrNull { it.id == selectedModel }
-    val selectedEffort: String? get() = if (isDraft) draftSettings.effort ?: settingsModel?.defaultReasoningEffort else runtime?.effort
-    val selectedServiceTier: String? get() = (if (isDraft) {
-        if (draftSettings.updateServiceTier) draftSettings.serviceTier else settingsModel?.defaultServiceTier
-    } else runtime?.serviceTier).takeUnless { it == "default" }
-    val canEditSettings: Boolean get() = session != null && settingsModel != null &&
-        (isDraft || runtime?.status in setOf("idle", "active", "ready")) &&
+    private val settingsProjection: RemoteSettings? get() = if (isDraft) null else optimisticSettings[owner]
+    val settingsPending: Boolean get() = settingsProjection != null
+    val selectedEffort: String? get() = if (isDraft) draftSettings.effort ?: settingsModel?.defaultReasoningEffort
+        else settingsProjection?.effort ?: runtime?.effort
+    val selectedServiceTier: String? get() {
+        val tier = when {
+            isDraft -> if (draftSettings.updateServiceTier) draftSettings.serviceTier else settingsModel?.defaultServiceTier
+            settingsProjection?.updateServiceTier == true -> settingsProjection?.serviceTier
+            else -> runtime?.serviceTier
+        }
+        return tier.takeUnless { it == "default" }
+    }
+    val serviceTierKnown: Boolean get() = isDraft || settingsProjection?.updateServiceTier == true ||
+        runtime?.serviceTierKnown == true || runtime?.serviceTier != null
+    private val canControlSettings: Boolean get() = session != null &&
+        (isDraft || runtime?.status in setOf("idle", "active", "ready", "notLoaded")) &&
         !controlling && !isStopping && attempts[owner]?.delivery !in
             setOf(RemoteDelivery.SUBMITTING, RemoteDelivery.ACCEPTED, RemoteDelivery.UNKNOWN)
+    val canChooseModel: Boolean get() = canControlSettings && !settingsPending
+    val canEditSettings: Boolean get() = canControlSettings && settingsModel != null
     fun settingsForModel(model: RemoteModel) = RemoteSettings(model.id,
         selectedEffort?.takeIf { it in model.reasoningEfforts.orEmpty() } ?: model.defaultReasoningEffort,
         selectedServiceTier?.takeIf { tier -> model.serviceTiers.orEmpty().any { it.id == tier } }, true)

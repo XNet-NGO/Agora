@@ -118,7 +118,7 @@ class SkillToolProvider(
         val args = Json.decodeFromString<Map<String, kotlinx.serialization.json.JsonElement>>(
             arguments.ifBlank { "{}" },
         )
-        fun arg(key: String): String = (args[key] as? JsonPrimitive)?.content.orEmpty()
+        fun arg(key: String): String = arg(args, key)
         ToolExecutionResult(when (name) {
             "list_skill_files" -> buildJsonObject {
                 put("type", "list_skill_files")

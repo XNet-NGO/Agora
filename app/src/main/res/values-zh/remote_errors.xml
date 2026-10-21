@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="remote_failed">远程操作未完成，请查看错误详情。</string>
-    <string name="remote_unknown">尚未确认消息是否送达。再次发送前，请先在 Codex 中核对该对话。</string>
+    <string name="remote_unknown">消息是否送达尚未确认。再次发送前请先在 Codex 中核对。点“允许发送”只解除提醒，不会发送消息。</string>
     <string name="remote_rejected">Codex 未接受这条消息，请查看错误详情后再尝试。</string>
     <string name="remote_storage_failed">Agora 无法访问本地远程数据，请检查剩余存储空间。</string>
     <string name="remote_network_failed">无法连接 Filo，请检查目标电脑、服务地址和网络。</string>

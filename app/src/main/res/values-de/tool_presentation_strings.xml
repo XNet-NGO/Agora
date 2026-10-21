@@ -147,4 +147,5 @@
         <item quantity="one">%1$d Ergebnis gefunden</item>
         <item quantity="other">%1$d Ergebnisse gefunden</item>
     </plurals>
+    <string name="tool_json_empty_container">Kein Inhalt</string>
 </resources>

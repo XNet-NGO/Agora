@@ -22,6 +22,12 @@
 -keep class com.jcraft.jsch.** { *; }
 -dontwarn com.jcraft.jsch.**
 
+# JLaTeXMath creates environment macro handlers and resolves executeMacro by name.
+-keep class org.scilab.forge.jlatexmath.NewCommandMacro {
+    public <init>();
+    public java.lang.String executeMacro(org.scilab.forge.jlatexmath.TeXParser, java.lang.String[]);
+}
+
 # Compose
 -dontwarn androidx.compose.**
 

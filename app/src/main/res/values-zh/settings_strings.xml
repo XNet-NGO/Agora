@@ -503,6 +503,9 @@
     <string name="settings_interaction">交互</string>
     <string name="settings_interaction_desc">助手向你提问的方式</string>
     <string name="ask_user_enable">允许助手提问</string>
+    <string name="ask_user_timeout">超时时间</string>
+    <string name="ask_user_timeout_desc">等待一组阻塞式提问的时长。超时后，未回答的问题会被跳过。</string>
+    <string name="ask_user_timeout_minutes">%1$d 分钟</string>
     <string name="ask_user_enable_desc">让模型可以用工具向你提问，并等你做出选择</string>
     <string name="unsaved_changes_title">未保存的更改</string>
     <string name="unsaved_changes_message">有未保存的更改，确定要放弃吗？</string>

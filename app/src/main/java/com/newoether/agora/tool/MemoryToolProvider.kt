@@ -171,8 +171,7 @@ class MemoryToolProvider(
         val argsStr = arguments.ifBlank { "{}" }
         val args =
             Json.decodeFromString<Map<String, kotlinx.serialization.json.JsonElement>>(argsStr)
-        fun arg(key: String): String =
-            (args[key] as? JsonPrimitive)?.content ?: ""
+        fun arg(key: String): String = arg(args, key)
 
         ToolExecutionResult(when (name) {
             "list_memory_files" -> {

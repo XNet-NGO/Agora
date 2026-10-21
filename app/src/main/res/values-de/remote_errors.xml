@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="remote_failed">Die Remote-Aktion konnte nicht abgeschlossen werden. Siehe Fehlerdetails.</string>
-    <string name="remote_unknown">Die Zustellung ist unbestätigt. Prüfe die Unterhaltung in Codex vor dem erneuten Senden.</string>
+    <string name="remote_unknown">Zustellung unbestätigt. Prüfe Codex vor dem erneuten Senden. „Senden Erlauben“ hebt nur diese Warnung auf und sendet nichts.</string>
     <string name="remote_rejected">Codex hat die Nachricht nicht angenommen. Prüfe vor einem neuen Versuch die Fehlerdetails.</string>
     <string name="remote_storage_failed">Agora kann nicht auf lokale Remote-Daten zugreifen. Prüfe den freien Speicher.</string>
     <string name="remote_network_failed">Filo ist nicht erreichbar. Prüfe Zielcomputer, Dienstadresse und Netzwerk.</string>

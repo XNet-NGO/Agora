@@ -47,6 +47,13 @@ layout, states, density, or interaction design has been approved.
   `SettingsScreen.kt` for `SettingsGroup` and `SettingsItem`, and
   `SettingsAnimations.kt` for page transitions. Copy their behavior through the
   shared APIs rather than recreating their dimensions or motion locally.
+- Returning from a Settings child page restores the previous page's browsing scroll position,
+  including lazy-list offset and collapsing-title progress. Keep positions separate by stable
+  destination/provider/model identity and use the existing scroll owner. If content shrinks,
+  clamp through the ordinary scroll/list state instead of jumping to an unrelated item.
+  Restoration is in place, not a new scroll animation. This retains browsing state only and
+  never saves or revives a discarded explicit-save editor draft. Narrow and two-pane navigation
+  follow the same rule within the Settings session.
 
 ## Anthropic Provider cache controls
 - Built-in Anthropic and custom Anthropic-protocol Provider details place an Advanced group directly
@@ -105,8 +112,10 @@ and WebUI share this contract.
   content, and a full-row ripple.
 - Keep counts and status details on a second line. Do not place them beside the
   primary label.
-- Destructive actions use the error color. Primary creation and save actions
-  use the primary color. Disabled appearance is owned by the component.
+- Destructive actions use the error color. Primary creation and save buttons
+  use the primary color. Top-bar Save icon actions use the scaffold's normal
+  foreground, including Add Provider; they do not set a primary tint.
+  Disabled appearance is owned by the component.
 - Settings destination rows never use a passive next-page chevron. Details,
   more, refresh, external-link, and other actual action icons use the full
   `onSurfaceVariant` color.
@@ -166,6 +175,129 @@ and WebUI share this contract.
 - Search Settings places `Show Uncached Notification` directly below Auto Cache only while Auto
   Cache is disabled. Its default-on stored value is retained while hidden; enabling Auto Cache hides
   the row rather than changing that value.
+
+## Conversation Search model editors
+
+- The Add Model type picker uses Cloud for Remote and the Provider Local AutoAwesome stars for Local.
+- Remote Add uses a Cloud-icon Provider SettingsItem with the current provider as its trailing value.
+  The whole row opens the same selected-item dropdown style as Model Search Method; provider chips
+  are not shown. Model uses AutoAwesome and one text input with a model-ID hint, without preset chips.
+- Local Add shows Model File as a whole-row AutoAwesome import action using the shared two-line
+  model-import item. Its headline and leading icon use primary, including a selected filename. The
+  description identifies a GGUF embedding model for local semantic search, not generic inference.
+  Both empty and selected-file states open the picker; there is no separate Replace action.
+- Failed remote embedding connection tests use the existing app snackbar with localized failure
+  text, not an inline error item that changes the form layout. Failure keeps the editor and draft
+  unchanged, and never saves the model. A closed/discarded editor must not emit a late result.
+- Embedding, Local Chat and vision-projector import actions share one fixed 24dp leading slot.
+  Empty-selection titles end with `(.gguf)` for Embedding/Chat and `(.mmproj)` for the vision
+  projector in every supported locale. Selected filenames are not given another suffix.
+  The ordinary icon and importing progress ring crossfade there over 250ms; importing never adds
+  a right-side spinner or shifts text. Imported-name changes also crossfade over 250ms. Importing
+  disables the whole row without changing its primary action styling. The existing motion-aware
+  progress indicator and shared Reduced Motion policy remain authoritative.
+- Local Edit omits Model File, including the private generated filename. The model's stored identity
+  remains immutable. Both editors retain explicit Save and their unsaved-draft Back guard.
+- Edit Cache uses a stable title and the existing cache status as supporting text, with the existing
+  fixed action/progress slot. Cache state, progress and Cache/Re-cache behavior are unchanged.
+
+## Provider Local model editors
+
+- Provider -> Local keeps its model list and global Advanced controls. Import GGUF Model and
+  each model's Edit action navigate through the existing Settings transition owner to a full-page
+  Add/Edit Local Model editor, not an AlertDialog.
+- Reuse the collapsing Settings scaffold, groups and icon/field rows. New models import a GGUF
+  through the same primary AutoAwesome import row as Embedding, but copy explicitly identifies a
+  Chat model running conversations on-device. The optional vision-projector row uses the same primary
+  action and left progress crossfade, with a Visibility icon and copy requiring a matching mmproj
+  GGUF for image input. Existing model files stay unchanged and are omitted from Edit. Keep Model ID,
+  alias, optional vision projector and the existing numeric settings.
+- Save is explicit. Back discards only after the shared unsaved-changes guard; field edits,
+  navigation and picker dismissal never persist a model. Unsaved imported files are draft-owned;
+  replacing or discarding them cleans only those files, never an existing model/projector.
+- Preserve ID validation and uniqueness, positive context/output limits, temperature 0-2, Top P
+  0-1 and maximum output not exceeding context size. New context/output defaults and existing
+  stored values remain governed by local-model-runtime.md.
+- The editor owns the Provider documentation FAB and matching bottom clearance when enabled.
+
+## Add Provider creation editor
+
+- Add Provider on the Providers list navigates to a separate full-page editor through the shared
+  Settings transition owner, never an Add Provider dialog. Existing provider destinations stay unchanged.
+- Reuse the collapsing Settings scaffold, icon/field rows and named groups. Keep the current protocol
+  selector, Provider name and Base URL fields, name-conflict policy and required URL validation.
+- Only explicit Save creates a provider. Back uses the shared unsaved-draft guard and never persists
+  partial values. Save trims the name and URL and returns to the existing Providers list.
+- Provider documentation uses the shared FAB, visibility setting and bottom clearance.
+
+## Shell device names
+
+- Shell device names are required and unique after trimming, ignoring case, matching shell-tool
+  routing. Editing a device excludes its own stable ID from conflicts. `Local Sandbox` is reserved.
+- The existing inline Add/Save editor retains its layout. A new device remains a local draft until
+  explicit Save succeeds; Back/navigation/field changes never create blank records. Duplicate names
+  use the existing localized name-error presentation and disable Save without changing the draft.
+- The persisted decision rechecks the latest list inside one DataStore edit. Concurrent creates or
+  renames cannot bypass validation through stale UI snapshots; failed admission preserves all data.
+  Import/secret restoration keeps its separate legacy compatibility and identity rules.
+
+## Interaction timeout
+
+- Interaction adds a Timeout slider directly below the Ask User enable switch, using the existing
+  Local Model Idle Retention slider layout and `PersistedSliderFeedbackGate`. It stays configurable
+  while Ask User is disabled, has no Save action, and saves once when the gesture finishes.
+- Use seven discrete minute presets: 1, 2, 5, 10, 15, 30 and 60, default 5. The track has seven
+  positions rather than sixty ticks. Show the localized selected duration beside the title.
+- One blocking Ask User call, including a question set, shares this time budget. Expiry preserves
+  already submitted answers and returns other questions unanswered without choosing for the user.
+  Non-blocking questions are unchanged. Newly captured generation contexts receive new settings;
+  editing the slider does not restart an existing wait.
+- Timeout is a portable Settings preference governed by `import-export.md`.
+
+## Todo List and Subagent settings
+
+- Tools contains separate Todo List (Checklist icon) and Subagents (AccountTree icon) destinations.
+  Each uses the existing Interaction settings reference: collapsing scaffold, named group, and one
+  whole-row SettingsItem switch with a leading icon, title and supporting description. No Save action.
+- Enable Todo List controls model read/update tools; Enable Subagents controls delegation tools.
+  Both global switches default on, persist immediately and enter newly captured generation contexts.
+  Child conversations never receive delegation tools even when enabled; Compact still disables both.
+- Subagents adds an immediate-save model list copied from Image Transcription: model/provider rows,
+  provider or Local icons, per-row remove menu, and the same multi-select Add Models dialog geometry,
+  typography, controls and spacing. It contains only
+  globally enabled model IDs. An unconfigured, missing or null list defaults to empty and allows
+  no new spawn; it never inherits the global model set. First Add includes only the selected models.
+  Existing explicitly configured lists are preserved. Disabling or removing a candidate never cancels existing children.
+- The Recommended Model section copies the Image Transcription model setting row and single-choice
+  picker, including its 64dp minimum row height, typography, icons, control geometry and spacing,
+  with a No Preference option. Choices come from the current Subagent list. Removing the selected
+  candidate clears its recommendation. The preference appears only as a nonbinding tool hint and
+  never substitutes for an explicitly chosen model. Neither section has a Save action.
+- Disabling does not erase stored lists, hide existing navigation, stop children or discard completion
+  delivery. Existing admitted work keeps its frozen context, like other tool-access preferences.
+- Capsule Display and Limits follow the Models group, in that order, outside the delegation-enabled
+  condition so both remain configurable while delegation is disabled. Capsule Display follows the
+  Appearance selector row: its trailing value uses primary `labelLarge`, a 96dp end-aligned text
+  slot with 4dp end padding and one-line ellipsis, and the shared dropdown is anchored in that same
+  trailing slot with `surfaceContainer` and 16dp tonal elevation.
+- The Limits group contains
+  Total Subagents (1–16, default 16) and Concurrent Subagents (1–16, default 4) integer sliders,
+  with no unlimited option. Reuse `LocalModelIdleRetentionSlider` layout and
+  `PersistedSliderFeedbackGate`; `SubagentLimitSlider` owns the shared presentation for both
+  real controls. Each gesture updates its displayed value locally and saves once on completion,
+  with no Save action. Persistence echoes must not overwrite a pending gesture or final value.
+- Concurrent Subagents cannot exceed Total Subagents. Its range ends at the smaller of 16 and
+  the persisted total; a total of 1 leaves a disabled slider fixed at 1 with no negative steps.
+  Both controls stay visible and configurable while delegation tools are disabled. Total counts
+  all existing children of each parent, including completed ones. Concurrent limits simultaneous
+  child execution per parent; extra work waits through the existing execution admission owner.
+  Lowering either limit never stops or deletes existing children and lets running work finish.
+- Subagents includes an immediate-save Capsule display row with its leading icon, description,
+  current value and existing selected-check dropdown: Individual and Grouped (default). It stays
+  available when delegation is disabled because existing child navigation stays available. Chinese
+  copy is胶囊显示方式/独立显示/合并显示. There is no Save action. Native/WebUI capsule and sheet behavior
+  belongs to application-ui.md39; persistence/default/restore belongs to import-export.md.
+- Both preferences follow portable Settings export, restore and Replace defaults in import-export.md.
 
 ## Diagnostic Capture
 

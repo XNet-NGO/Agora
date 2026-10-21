@@ -491,6 +491,9 @@
     <string name="settings_interaction">互動</string>
     <string name="settings_interaction_desc">助手向你提問的方式</string>
     <string name="ask_user_enable">允許助手提問</string>
+    <string name="ask_user_timeout">逾時時間</string>
+    <string name="ask_user_timeout_desc">等待一組阻塞式提問的時間。逾時後，未回答的問題會被略過。</string>
+    <string name="ask_user_timeout_minutes">%1$d 分鐘</string>
     <string name="ask_user_enable_desc">讓模型可以用工具向你提問，並等你做出選擇</string>
     <string name="unsaved_changes_title">未儲存的變更</string>
     <string name="unsaved_changes_message">有未儲存的變更，確定要捨棄嗎？</string>

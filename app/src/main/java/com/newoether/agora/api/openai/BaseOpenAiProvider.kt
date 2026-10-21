@@ -158,7 +158,7 @@ abstract class BaseOpenAiProvider : LlmProvider {
                             },
                         serviceTier = config.openAiServiceTier,
                         temperature = config.temperature,
-                        maxOutputTokens = config.maxTokens,
+                        maxOutputTokens = config.effectiveOpenAiMaxTokens(),
                         topP = config.topP,
                         promptCacheKey = config.promptCacheKey,
                     )
@@ -173,7 +173,7 @@ abstract class BaseOpenAiProvider : LlmProvider {
                         serviceTier = config.openAiServiceTier,
                         tools = tools,
                         temperature = config.temperature,
-                        maxTokens = config.maxTokens,
+                        maxTokens = config.effectiveOpenAiMaxTokens(),
                         topP = config.topP,
                         frequencyPenalty = config.frequencyPenalty,
                         presencePenalty = config.presencePenalty,
@@ -313,7 +313,9 @@ abstract class BaseOpenAiProvider : LlmProvider {
                         } else {
                             val errorRaw = handle.errorBody.orEmpty()
                             val hasV1Fallback = endpointIndex + 1 < endpointUrls.size
-                            if (hasV1Fallback) {
+                            if (hasV1Fallback &&
+                                !ProviderRetryPolicy.isPermanentHttpFailure(handle.code, errorRaw)
+                            ) {
                                 DebugLog.w(
                                     "AgoraAPI",
                                     "[$name] HTTP ${handle.code}; trying endpoint candidate " +

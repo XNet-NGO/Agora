@@ -104,7 +104,7 @@ internal fun RemoteOverlay(
 }
 
 @Composable
-private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, active: Boolean, onBack: () -> Unit,
+internal fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, active: Boolean, onBack: () -> Unit,
     onSnackbarOffsetChanged: (androidx.compose.ui.unit.Dp) -> Unit,
     onMediaClick: (List<String>, Int) -> Unit,
     onMessage: (String, String?, (() -> Unit)?) -> Unit) {
@@ -155,7 +155,8 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                 CollapsingSettingsLazyScaffold(
                     listState = listState,
                     contentBottomPadding = 104.dp,
-                    title = stringResource(R.string.remote_sessions), onBack = back,
+                    title = displayed.devices.firstOrNull { it.id == displayed.deviceId }?.name
+                        ?.ifBlank { null } ?: stringResource(R.string.remote_device), onBack = back,
                     actions = {
                         IconButton(onClick = { showUsage = true }, enabled = current && active) {
                             Icon(Icons.Default.DataUsage, stringResource(R.string.remote_usage))
@@ -169,12 +170,16 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                         }
                     },
                 ) {
+                    item(key = "agents") {
+                        RemoteAgentChipRow(displayed.devices.firstOrNull { it.id == displayed.deviceId }?.status
+                            ?: RemoteDeviceStatus.IDLE)
+                    }
                     if (!displayed.loading && displayed.sessions.isEmpty() && !displayed.error) {
                         item { Text(stringResource(R.string.remote_empty), Modifier.padding(16.dp)) }
                     }
                     if (displayed.sessions.isNotEmpty()) item(key = "sessions") {
                         SettingsGroup(
-                            title = displayed.devices.firstOrNull { it.id == displayed.deviceId }?.name.orEmpty(),
+                            title = stringResource(R.string.remote_sessions),
                             items = displayed.sessions.map { session -> {
                                 key(session.id) {
                                     var showMenu by remember { mutableStateOf(false) }
@@ -201,7 +206,7 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                                                     hasUnreadGeneration = displayed.hasUnreadGeneration(session.id),
                                                 ))
                                                 Box {
-                                                    IconButton(onClick = { showMenu = true }, enabled = actionsEnabled) {
+                                                    IconButton(onClick = { showMenu = true }, enabled = current && active) {
                                                         Icon(Icons.Default.MoreVert, stringResource(R.string.more))
                                                     }
                                                     AgoraDropdownMenu(

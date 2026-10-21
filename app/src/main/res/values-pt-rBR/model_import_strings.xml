@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="embedding_import_title">Importar modelo de embeddings (.gguf)</string>
+    <string name="embedding_import_desc">Importar um modelo GGUF de embeddings para busca semântica local</string>
+    <string name="local_chat_import_title">Importar modelo de chat (.gguf)</string>
+    <string name="local_chat_import_desc">Importar um modelo GGUF de chat para executar conversas neste dispositivo</string>
+    <string name="local_projector_import_title">Importar projetor de visão (.mmproj)</string>
+</resources>

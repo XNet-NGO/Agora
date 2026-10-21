@@ -11,7 +11,7 @@
     <string name="remote_sync_hint">Codex에서 이 세션을 열어 두세요. 답변이 저장되면 동기화됩니다.</string>
     <string name="remote_refresh">새로고침</string>
     <string name="remote_load_more">더 불러오기</string>
-    <string name="remote_check">확인했어요</string>
+    <string name="remote_check">전송 허용</string>
     <string name="remote_confirm">계속 보낼까요?</string>
     <string name="remote_remove">연결 삭제</string>
     <string name="remote_add_device">기기 추가</string>

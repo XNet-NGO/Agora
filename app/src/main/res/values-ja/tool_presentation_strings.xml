@@ -129,4 +129,5 @@
     <plurals name="tool_web_search_result_count">
         <item quantity="other">%1$d 件の結果が見つかった</item>
     </plurals>
+    <string name="tool_json_empty_container">コンテンツなし</string>
 </resources>

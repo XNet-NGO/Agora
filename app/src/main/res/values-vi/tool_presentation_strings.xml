@@ -129,4 +129,5 @@
     <plurals name="tool_web_search_result_count">
         <item quantity="other">Đã tìm thấy %1$d kết quả</item>
     </plurals>
+    <string name="tool_json_empty_container">Không có nội dung</string>
 </resources>

@@ -177,6 +177,10 @@ internal class FiloClient(
         json.decodeFromString<RemoteConversationPage>(text).also { page ->
             require(page.messages.all { it.role == "user" || it.role == "assistant" })
             require(page.messages.map { it.id }.toSet().size == page.messages.size)
+            require(page.inputReceipts.size <= 128 && page.inputReceipts.all {
+                it.clientId.isNotBlank() && it.turnId.isNotBlank() && it.messageId.isNotBlank()
+            }) { "Invalid native input receipt" }
+            require(page.inputReceipts.map { it.clientId }.distinct().size == page.inputReceipts.size)
             page.messages.forEach { message -> message.activity?.let { activity ->
                 require(message.role == "assistant" && activity.type in setOf("thought", "tool"))
                 require(activity.type != "tool" || !activity.toolName.isNullOrBlank())
@@ -245,7 +249,7 @@ internal class FiloClient(
         if (body.toByteArray(Charsets.UTF_8).size > 65536) throw FiloInputException()
         return json.decodeFromString<CreateResult>(request("v1/sessions", body = body))
             .also { require(it.clientId == clientId && it.turnId.isNotBlank() && it.id.isNotBlank()) }
-            .let { RemoteSession(it.id, it.title, it.cwd, it.updatedAt, it.status) }
+            .let { RemoteSession(it.id, it.title, it.cwd, it.updatedAt, it.status, acceptedTurnId = it.turnId) }
     }
 
     // Only the three next-turn keys leave the device; a malformed body never reaches native.

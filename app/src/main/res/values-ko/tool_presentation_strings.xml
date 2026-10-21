@@ -129,4 +129,5 @@
     <plurals name="tool_web_search_result_count">
         <item quantity="other">결과 %1$d개를 찾음</item>
     </plurals>
+    <string name="tool_json_empty_container">콘텐츠 없음</string>
 </resources>

@@ -75,6 +75,25 @@ class IdentityClipWidthTest {
     }
 
     @Test
+    fun conversationToMenuCircleShrinksAndAnInterruptedReturnExpandsFromTheCurrentEdge() {
+        start()
+        compose.runOnIdle { identity = "new-chat"; target = 52.dp }
+        frames(160)
+        val interrupted = width
+        assertTrue("$interrupted", interrupted > 52.dp && interrupted < 100.dp)
+        compose.runOnIdle { identity = "conversation"; target = 200.dp }
+        frames(48)
+        val rebased = width
+        assertTrue("$width", width > 52.dp && width < 200.dp)
+        frames(48)
+        assertTrue("$width", width > rebased && width < 200.dp)
+        frames(IDENTITY_CLIP_DURATION_MILLIS.toLong())
+        assertEquals(200.dp, width)
+        compose.runOnIdle { identity = "new-chat"; target = 52.dp }
+        frames(IDENTITY_CLIP_DURATION_MILLIS + 64L)
+        assertEquals(52.dp, width)
+    }
+    @Test
     fun reducedMotionSnapsTheEdge() {
         start()
         compose.runOnIdle { spatial = false; identity = "b"; target = 60.dp }

@@ -238,16 +238,23 @@ class SshClient(
                 start = start,
                 length = minOf(effectiveLimit, totalBytes - start).toInt(),
             )
-            val content = String(contentBytes, Charsets.UTF_8)
-            val completeContent = if (totalBytes <= SHELL_FILE_READ_MAX_BYTES) {
+            val (content, consumed) = decodeUtf8FileSlice(
+                contentBytes,
+                contentBytes.size,
+                reachesEndOfFile = start + contentBytes.size >= totalBytes,
+            )
+            // Small files are read whole once more (unless this slice already was the whole file)
+            // for the total line count and the sha256 that expected_sha256 compares against.
+            val completeBytes = if (totalBytes <= SHELL_FILE_READ_MAX_BYTES) {
                 if (start == 0L && contentBytes.size.toLong() == totalBytes) {
-                    content
+                    contentBytes
                 } else {
-                    String(readSlice(0, totalBytes.toInt()), Charsets.UTF_8)
+                    readSlice(0, totalBytes.toInt())
                 }
             } else {
                 null
             }
+            val completeContent = completeBytes?.let { String(it, Charsets.UTF_8) }
             ShellFileReadResult(
                 content = content,
                 lines = shellFileLineCount(content),
@@ -257,6 +264,8 @@ class SshClient(
                 offset = start,
                 limit = effectiveLimit,
                 truncated = start + contentBytes.size < totalBytes,
+                bytesRead = consumed.toLong(),
+                sha256 = completeBytes?.let(::shellFileSha256).orEmpty(),
             )
         } catch (e: Exception) {
             throw IllegalStateException("SFTP read failed: ${e.message}")
@@ -268,8 +277,21 @@ class SshClient(
     /**
      * Returns null on success, error message string on failure.
      */
-    suspend fun fileWrite(path: String, content: String): String? = withSftp { sftp ->
+    suspend fun fileWrite(
+        path: String,
+        content: String,
+        expectedSha256: String = "",
+    ): String? = withSftp { sftp ->
         try {
+            if (expectedSha256.isNotBlank()) {
+                val current = try {
+                    if (sftp.stat(path).isDir) return@withSftp "target is not a regular file"
+                    sftp.get(path).use { it.readBytes() }
+                } catch (e: com.jcraft.jsch.SftpException) {
+                    if (e.id == ChannelSftp.SSH_FX_NO_SUCH_FILE) null else throw e
+                }
+                shellExpectedSha256Error(expectedSha256, current)?.let { return@withSftp it }
+            }
             val parent = path.substringBeforeLast('/', "")
             if (parent.isNotBlank()) {
                 ensureParentDirs(sftp, parent)
@@ -286,6 +308,12 @@ class SshClient(
         oldString: String,
         newString: String,
         replaceAll: Boolean,
+    ): ShellFileEditResult = fileEdit(path, listOf(ShellFileEdit(oldString, newString, replaceAll)))
+
+    suspend fun fileEdit(
+        path: String,
+        edits: List<ShellFileEdit>,
+        expectedSha256: String = "",
     ): ShellFileEditResult = withSftp { sftp ->
         try {
             fun readEditableFile(): ByteArray {
@@ -310,11 +338,12 @@ class SshClient(
             if (originalBytes.size > SHELL_FILE_EDIT_MAX_BYTES) {
                 return@withSftp ShellFileEditResult(0, error = "file exceeds 16MB edit limit")
             }
+            shellExpectedSha256Error(expectedSha256, originalBytes)?.let {
+                return@withSftp ShellFileEditResult(0, error = it)
+            }
             val (editedContent, editResult) = editShellFileContent(
                 content = originalBytes.toString(Charsets.UTF_8),
-                oldString = oldString,
-                newString = newString,
-                replaceAll = replaceAll,
+                edits = edits,
             )
             if (editedContent == null) return@withSftp editResult
             val editedBytes = editedContent.toByteArray(Charsets.UTF_8)
@@ -351,7 +380,7 @@ class SshClient(
             sftpListRecursive(sftp, base, allFiles, remaining)
             val matches = globMatch(allFiles, base, pattern)
             matches.take(SHELL_FILE_GLOB_MAX_MATCHES) to
-                (matches.size >= SHELL_FILE_GLOB_MAX_MATCHES)
+                (matches.size > SHELL_FILE_GLOB_MAX_MATCHES)
         }
 
     // remaining: levels still allowed including the current dir's files. -1 = unlimited;
@@ -365,6 +394,7 @@ class SshClient(
                 if (name == "." || name == "..") continue
                 val fullPath = "$dir/$name"
                 if (entry.attrs.isDir) {
+                    if (name in SHELL_FILE_SEARCH_SKIPPED_DIRS) continue
                     if (remaining < 0 || remaining > 1) {
                         sftpListRecursive(sftp, fullPath, result, if (remaining < 0) -1 else remaining - 1)
                     }
@@ -385,28 +415,28 @@ class SshClient(
 
     // ── file_grep ──────────────────────────────────────────
 
-    data class GrepMatch(
-        val path: String,
-        val line: Int,
-        val content: String
-    )
-
     /**
      * grep for pattern in files.
-     * Strategy: try server-side grep first (fast), fall back to SFTP read+grep locally.
+     * Strategy: try server-side grep first (fast), fall back to SFTP read+grep locally. Context
+     * requests go straight to the SFTP path, whose structured output avoids parsing grep -C
+     * separators that are ambiguous for paths containing '-'.
      */
     suspend fun fileGrep(
         pattern: String,
         basePath: String = "",
-        fileGlob: String = ""
-    ): Result<Pair<List<GrepMatch>, Boolean>> {
+        fileGlob: String = "",
+        options: ShellGrepOptions = ShellGrepOptions(),
+    ): Result<ShellGrepResult> {
         val base = basePath.ifBlank { "." }
+        if (options.context > 0) return fallbackGrep(pattern, base, fileGlob, options)
 
         // Try server-side grep via exec channel first
         return try {
             val grepCmd = buildString {
                 // -I skips binary files (matches the local-fallback NUL heuristic below).
                 append("grep -rnI ")
+                if (options.caseInsensitive) append("-i ")
+                SHELL_FILE_SEARCH_SKIPPED_DIRS.forEach { append("--exclude-dir=$it ") }
                 // The glob is model-supplied input on a non-confirmed (read-only) tool path, so it
                 // must be shell-escaped exactly like pattern/base — otherwise it is a command
                 // injection vector that bypasses the remote-mutation confirmation gate.
@@ -424,64 +454,73 @@ class SshClient(
                         .filter { it.isNotBlank() }
                         .mapNotNull { parseGrepLine(it) }
                     Result.success(
-                        matches.take(SHELL_FILE_GREP_MAX_MATCHES) to
-                            (matches.size >= SHELL_FILE_GREP_MAX_MATCHES),
+                        ShellGrepResult(
+                            matches = matches.take(SHELL_FILE_GREP_MAX_MATCHES),
+                            truncated = matches.size > SHELL_FILE_GREP_MAX_MATCHES,
+                        ),
                     )
                 }
                 else -> {
                     // exitCode >= 2: grep error (not installed, bad args, etc.) — fallback
-                    fallbackGrep(pattern, base, fileGlob)
+                    fallbackGrep(pattern, base, fileGlob, options)
                 }
             }
         } catch (_: Exception) {
-            fallbackGrep(pattern, base, fileGlob)
+            fallbackGrep(pattern, base, fileGlob, options)
         }
     }
 
     private suspend fun fallbackGrep(
         regex: String,
         basePath: String,
-        fileGlob: String
-    ): Result<Pair<List<GrepMatch>, Boolean>> {
+        fileGlob: String,
+        options: ShellGrepOptions,
+    ): Result<ShellGrepResult> {
         return try {
             val globPattern = fileGlob.ifBlank { "*" }
             val files = fileGlob(globPattern, basePath).first
+            val regexOptions = if (options.caseInsensitive) setOf(RegexOption.IGNORE_CASE) else emptySet()
             val pattern = try {
-                Regex(regex)
+                Regex(regex, regexOptions)
             } catch (e: Exception) {
-                Regex(java.util.regex.Pattern.quote(regex))
+                Regex(java.util.regex.Pattern.quote(regex), regexOptions)
             }
-            val allMatches = mutableListOf<GrepMatch>()
+            // One match past the cap distinguishes an exact-limit result from a truncated one.
+            val limit = SHELL_FILE_GREP_MAX_MATCHES + 1
+            val allMatches = mutableListOf<ShellClient.GrepMatch>()
+            var skippedLarge = 0
             for (file in files) {
                 try {
-                    val content = fileRead(file, 0, SHELL_FILE_GREP_MAX_FILE_BYTES).content
-                    // Skip binary files (NUL-byte heuristic), as grep -I would.
-                    if (content.contains('\u0000')) continue
-                    content.lines().forEachIndexed { index, line ->
-                        if (pattern.containsMatchIn(line)) {
-                            allMatches.add(
-                                GrepMatch(
-                                    path = file,
-                                    line = index + 1,
-                                    content = line.take(SHELL_FILE_GREP_MAX_CONTENT_CHARS),
-                                ),
-                            )
-                            if (allMatches.size >= SHELL_FILE_GREP_MAX_MATCHES) {
-                                return Result.success(allMatches to true)
-                            }
-                        }
+                    val read = fileRead(file, 0, SHELL_FILE_GREP_MAX_FILE_BYTES)
+                    if (read.totalBytes > SHELL_FILE_GREP_MAX_FILE_BYTES) {
+                        skippedLarge += 1
+                        continue
                     }
+                    // Skip binary files (NUL-byte heuristic), as grep -I would.
+                    if (read.content.contains('\u0000')) continue
+                    grepShellFileText(file, read.content, pattern, options.context, limit, allMatches)
+                    if (allMatches.size >= limit) break
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
                 } catch (_: Exception) {
                     // Skip unreadable files
                 }
             }
-            Result.success(allMatches to false)
+            Result.success(
+                ShellGrepResult(
+                    matches = allMatches.take(SHELL_FILE_GREP_MAX_MATCHES),
+                    truncated = allMatches.size > SHELL_FILE_GREP_MAX_MATCHES,
+                    skippedLargeFiles = skippedLarge,
+                ),
+            )
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    private fun parseGrepLine(line: String): GrepMatch? {
+    private fun parseGrepLine(line: String): ShellClient.GrepMatch? {
         // Format: "path:lineNum:content" or "path:lineNum:col:content"
         val firstColon = line.indexOf(':')
         if (firstColon < 0) return null
@@ -490,9 +529,9 @@ class SshClient(
         val secondColon = afterPath.indexOf(':')
         if (secondColon < 0) return null
         val lineNumStr = afterPath.substring(0, secondColon)
-        val content = afterPath.substring(secondColon + 1).take(SHELL_FILE_GREP_MAX_CONTENT_CHARS)
+        val content = afterPath.substring(secondColon + 1).shellGrepLine()
         val lineNum = lineNumStr.toIntOrNull() ?: return null
-        return GrepMatch(path = path, line = lineNum, content = content)
+        return ShellClient.GrepMatch(path = path, line = lineNum, content = content)
     }
 
     // ── Shell Escaping ─────────────────────────────────────

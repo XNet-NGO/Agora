@@ -63,6 +63,14 @@ data class GenerationConfig(
 
 data class GenerationContext(
     val conversationId: String? = null,
+    val subagentToolsEnabled: Boolean = false,
+    val enabledModelIds: List<String> = emptyList(),
+    /** Null and empty both allow no new subagents; global enabled IDs are not a fallback. */
+    val subagentModelIds: List<String>? = null,
+    val subagentRecommendedModel: String? = null,
+    val todoEnabled: Boolean = true,
+    /** Supplied only by the authorized executor, never by Provider arguments. */
+    val toolEffectIdentity: RunEffectIdentity? = null,
     val accessSavedMemories: Boolean = true,
     val accessActiveMemory: Boolean = true,
     val skillReadAccess: Boolean = true,
@@ -82,6 +90,7 @@ data class GenerationContext(
     val webSearchBaseUrl: String = "",
     val imageGenEnabled: Boolean = false,
     val askUserEnabled: Boolean = false,
+    val askUserTimeoutMinutes: Int = com.newoether.agora.data.DEFAULT_ASK_USER_TIMEOUT_MINUTES,
     val imageGenApiKey: String = "",
     val imageGenBaseUrl: String = "",
     val imageGenModel: String = "gpt-image-1",

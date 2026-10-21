@@ -11,7 +11,7 @@
     <string name="remote_sync_hint">请在 Codex 中保持此会话打开。回复保存后会同步显示。</string>
     <string name="remote_refresh">刷新</string>
     <string name="remote_load_more">加载更多</string>
-    <string name="remote_check">我已检查</string>
+    <string name="remote_check">允许发送</string>
     <string name="remote_confirm">继续发送？</string>
     <string name="remote_remove">移除连接</string>
     <string name="remote_add_device">添加设备</string>

@@ -36,6 +36,31 @@ The active-memory reader is a distinct display target, not an ordinary saved mem
 
 Memory/skill rename summaries show old and new names when known; description edits name the description action. `ask_user` distinguishes waiting for answers, queued questions, answered questions and skipped questions using actual returned facts. A mixed set shows answered count against returned question count without claiming every question was answered. Question outcomes are natural sentences with quantity grammar (`Answered 1 question`, `Answered 3 questions`, `Answered 2 of 3 questions`, `Skipped 2 questions`, `Queued 2 questions`), never label-colon-count text. `stop_loop` distinguishes a new stop from an already stopped Loop.
 
+## Detail Bodies
+Shell execute, get/wait and stop-job details use the same shell body, including stopped or interrupted
+server results. The compact status remains distinct from command output. A failed call with no real
+output shows only its failure, not an empty-output placeholder. Successful calls without output use
+the localized `(no output)` label. Transport failure never turns arbitrary result text into output.
+Memory, Active Memory and Skill reads render stored text literally through the existing file/code
+body, never Markdown interpretation. One file and Active Memory start their separate line-number
+gutter at 1; multi-file results retain original file separators in one unnumbered code body. Text,
+selection and copy remain unchanged. Compose and WebUI consume this same presentation projection.
+Empty JSON arrays and objects render the same localized `No content` label in native and WebUI
+details, including nested values; do not show the `[]`/`{}` literal or an `(empty)` suffix.
+Only complete containers are empty; an open streaming prefix must not claim emptiness or invent
+closing syntax. Nested empty values appear
+once beside their key, without an ellipsis or an extra child block. Raw tool content, copy data,
+and lifecycle semantics stay unchanged; this is shared JSON presentation, not a Todo exception.
+`file_grep` clamps integer `context` to the supported 0..10 range instead of rejecting it; a changed
+value prefixes model-facing text with `context: N (requested M)`, while structured content retains
+the actual backend result. Noninteger values still fail validation.
+
 ## Localization
+
+Todo and Subagent tools use explicit built-in kinds and localized action titles, never the unknown-tool
+English fallback. Their summaries describe the tool action, not a child's generation state: spawn
+starts a child, send queues a message, and wait completes its waiting action without claiming every
+child finished. Raw protocol names, keys, arguments and results remain unchanged. Native and WebUI
+message cards consume the same app-locale resources; browser chrome retains its existing en/zh scope.
 
 Every locale contains the same summary keys and placeholder types. Languages may reorder indexed placeholders. Running text uses `…`. Terminal text has no final period. A change to lifecycle semantics must update every locale and the presentation contract tests in the same change.

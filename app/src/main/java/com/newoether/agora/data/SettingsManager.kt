@@ -25,6 +25,7 @@ class SettingsManager(private val context: Context) {
     internal val modelPreferenceStore = SettingsModelPreferenceStore(context.dataStore, json)
     internal val backupPreferenceStore = SettingsBackupPreferenceStore(context.dataStore)
     internal val systemPromptStore = SettingsSystemPromptStore(context.dataStore, json)
+    internal val shellDeviceStore = SettingsShellDeviceStore(context.dataStore, json)
 
     companion object {
         const val DEFAULT_PROXY_HOST = "127.0.0.1"
@@ -198,6 +199,24 @@ class SettingsManager(private val context: Context) {
     // Confirm before the model runs state-changing commands on remote shell servers. Default on.
     val shellConfirmEnabled: Flow<Boolean> = context.dataStore.data.map { it[SHELL_CONFIRM_ENABLED] ?: true }
     val askUserEnabled: Flow<Boolean> = context.dataStore.data.map { it[ASK_USER_ENABLED] ?: true }
+    val askUserTimeoutMinutes: Flow<Int> = context.dataStore.data.map { normalizeAskUserTimeoutMinutes(it[ASK_USER_TIMEOUT_MINUTES]) }
+    val todoEnabled: Flow<Boolean> = context.dataStore.data.map { it[TODO_ENABLED] ?: true }
+    val subagentToolsEnabled: Flow<Boolean> = context.dataStore.data.map { it[SUBAGENT_TOOLS_ENABLED] ?: true }
+    val subagentMaxTotal: Flow<Int> = context.dataStore.data.map { normalizeSubagentMaxTotal(it[SUBAGENT_MAX_TOTAL]) }
+    val subagentMaxConcurrent: Flow<Int> = context.dataStore.data.map {
+        normalizeSubagentMaxConcurrent(it[SUBAGENT_MAX_CONCURRENT], normalizeSubagentMaxTotal(it[SUBAGENT_MAX_TOTAL]))
+    }
+    val subagentCapsuleDisplayMode: Flow<String> = context.dataStore.data.map {
+        SubagentCapsuleDisplayModes.normalize(it[SUBAGENT_CAPSULE_DISPLAY_MODE])
+    }
+    val subagentEnabledModels: Flow<Set<String>?> = modelPreferenceStore.subagentEnabledModels
+    val subagentRecommendedModel: Flow<String?> = modelPreferenceStore.subagentRecommendedModel
+    val subagentModelIds: Flow<Set<String>> = modelPreferenceStore.subagentModelIds
+    suspend fun addSubagentModels(models: Set<String>) = modelPreferenceStore.addSubagentModels(models)
+    suspend fun removeSubagentModel(model: String) = modelPreferenceStore.removeSubagentModel(model)
+    suspend fun saveSubagentEnabledModels(models: Set<String>?, merge: Boolean = false) =
+        modelPreferenceStore.saveSubagentEnabledModels(models, merge)
+    suspend fun saveSubagentRecommendedModel(model: String?) = modelPreferenceStore.saveSubagentRecommendedModel(model)
     val shellDevices: Flow<List<ShellDeviceConfig>> =
         context.dataStore.data.map { preferences -> decodeEncryptedShellDevices(preferences, json) }
     val mcpServers: Flow<List<McpServerConfig>> = context.dataStore.data.map { pref ->
@@ -642,6 +661,29 @@ class SettingsManager(private val context: Context) {
     }
     suspend fun saveAskUserEnabled(enabled: Boolean) {
         context.dataStore.edit { it[ASK_USER_ENABLED] = enabled }
+    }
+    suspend fun saveAskUserTimeoutMinutes(minutes: Int) {
+        context.dataStore.edit { it[ASK_USER_TIMEOUT_MINUTES] = normalizeAskUserTimeoutMinutes(minutes) }
+    }
+    suspend fun saveTodoEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[TODO_ENABLED] = enabled }
+    }
+    suspend fun saveSubagentMaxTotal(value: Int) = saveSubagentLimits(maxTotal = value)
+    suspend fun saveSubagentMaxConcurrent(value: Int) = saveSubagentLimits(maxConcurrent = value)
+    internal suspend fun saveSubagentLimits(maxTotal: Int? = null, maxConcurrent: Int? = null) {
+        context.dataStore.edit { prefs ->
+            val previousTotal = normalizeSubagentMaxTotal(prefs[SUBAGENT_MAX_TOTAL])
+            val total = normalizeSubagentMaxTotal(maxTotal ?: previousTotal)
+            val concurrent = maxConcurrent ?: normalizeSubagentMaxConcurrent(prefs[SUBAGENT_MAX_CONCURRENT], previousTotal)
+            prefs[SUBAGENT_MAX_TOTAL] = total
+            prefs[SUBAGENT_MAX_CONCURRENT] = normalizeSubagentMaxConcurrent(concurrent, total)
+        }
+    }
+    suspend fun saveSubagentCapsuleDisplayMode(mode: String) {
+        context.dataStore.edit { it[SUBAGENT_CAPSULE_DISPLAY_MODE] = SubagentCapsuleDisplayModes.normalize(mode) }
+    }
+    suspend fun saveSubagentToolsEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[SUBAGENT_TOOLS_ENABLED] = enabled }
     }
     suspend fun saveShellDevices(devices: List<ShellDeviceConfig>) {
         context.dataStore.edit { it[SHELL_DEVICES_JSON] = com.newoether.agora.util.SecretCrypto.encrypt(json.encodeToString(devices)) }

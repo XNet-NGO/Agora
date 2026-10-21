@@ -5,8 +5,11 @@ import com.newoether.agora.data.ShellDeviceConfig
 import com.newoether.agora.sandbox.SandboxManager
 import com.newoether.agora.util.SHELL_FILE_READ_MAX_BYTES
 import com.newoether.agora.util.ShellClient
+import com.newoether.agora.util.ShellFileEdit
 import com.newoether.agora.util.ShellFileEditResult
 import com.newoether.agora.util.ShellFileReadResult
+import com.newoether.agora.util.ShellGrepOptions
+import com.newoether.agora.util.ShellGrepResult
 import com.newoether.agora.util.SshClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -31,12 +34,13 @@ internal sealed interface Backend {
         emit(ToolExecutionEvent.Completed(executeCommand(cmd, workdir, timeoutMs)))
     }
     suspend fun fileRead(path: String, offset: Long, limit: Long): ShellFileReadResult
-    suspend fun fileWrite(path: String, content: String): String?
+    /** A non-blank [expectedSha256] must match the current file or nothing is written. */
+    suspend fun fileWrite(path: String, content: String, expectedSha256: String = ""): String?
+    /** Applies ordered edits atomically: all succeed or nothing is written. */
     suspend fun fileEdit(
         path: String,
-        oldString: String,
-        newString: String,
-        replaceAll: Boolean,
+        edits: List<ShellFileEdit>,
+        expectedSha256: String = "",
     ): ShellFileEditResult
     suspend fun fileGlob(
         pattern: String,
@@ -47,7 +51,8 @@ internal sealed interface Backend {
         pattern: String,
         basePath: String,
         fileGlob: String,
-    ): Result<Pair<List<ShellClient.GrepMatch>, Boolean>>
+        options: ShellGrepOptions,
+    ): Result<ShellGrepResult>
     fun close()
 }
 
@@ -156,15 +161,14 @@ internal class ConchBackend(override val device: ShellDeviceConfig) : Backend {
     override suspend fun fileRead(path: String, offset: Long, limit: Long): ShellFileReadResult =
         client.fileRead(path, offset, limit)
 
-    override suspend fun fileWrite(path: String, content: String): String? =
-        client.fileWrite(path, content)?.let { jsonError("file_write", it, server = deviceName) }
+    override suspend fun fileWrite(path: String, content: String, expectedSha256: String): String? =
+        client.fileWrite(path, content, expectedSha256)?.let { jsonError("file_write", it, server = deviceName) }
 
     override suspend fun fileEdit(
         path: String,
-        oldString: String,
-        newString: String,
-        replaceAll: Boolean,
-    ): ShellFileEditResult = client.fileEdit(path, oldString, newString, replaceAll)
+        edits: List<ShellFileEdit>,
+        expectedSha256: String,
+    ): ShellFileEditResult = client.fileEdit(path, edits, expectedSha256)
 
     override suspend fun fileGlob(
         pattern: String,
@@ -177,8 +181,9 @@ internal class ConchBackend(override val device: ShellDeviceConfig) : Backend {
         pattern: String,
         basePath: String,
         fileGlob: String,
-    ): Result<Pair<List<ShellClient.GrepMatch>, Boolean>> =
-        client.fileGrep(pattern, basePath, fileGlob)
+        options: ShellGrepOptions,
+    ): Result<ShellGrepResult> =
+        client.fileGrep(pattern, basePath, fileGlob, options)
 
     override fun close() {}
 
@@ -244,30 +249,33 @@ internal class SshBackend(override val device: ShellDeviceConfig) : Backend {
             failedFileRead(offset, limit, "SFTP read failed: ${e.message}")
         }
 
-    override suspend fun fileWrite(path: String, content: String): String? =
-        client.fileWrite(path, content)?.let { jsonError("file_write", it, server = deviceName) }
+    override suspend fun fileWrite(path: String, content: String, expectedSha256: String): String? =
+        client.fileWrite(path, content, expectedSha256)?.let { jsonError("file_write", it, server = deviceName) }
 
     override suspend fun fileEdit(
         path: String,
-        oldString: String,
-        newString: String,
-        replaceAll: Boolean,
-    ): ShellFileEditResult = client.fileEdit(path, oldString, newString, replaceAll)
+        edits: List<ShellFileEdit>,
+        expectedSha256: String,
+    ): ShellFileEditResult = client.fileEdit(path, edits, expectedSha256)
 
     override suspend fun fileGlob(
         pattern: String,
         basePath: String,
         depth: Int?,
-    ): Result<Pair<List<String>, Boolean>> = Result.success(client.fileGlob(pattern, basePath, depth))
+    ): Result<Pair<List<String>, Boolean>> = try {
+        Result.success(client.fileGlob(pattern, basePath, depth))
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
 
     override suspend fun fileGrep(
         pattern: String,
         basePath: String,
         fileGlob: String,
-    ): Result<Pair<List<ShellClient.GrepMatch>, Boolean>> =
-        client.fileGrep(pattern, basePath, fileGlob).map { (matches, truncated) ->
-            matches.map { ShellClient.GrepMatch(it.path, it.line, it.content) } to truncated
-        }
+        options: ShellGrepOptions,
+    ): Result<ShellGrepResult> = client.fileGrep(pattern, basePath, fileGlob, options)
 
     override fun close() { client.close() }
 }
@@ -302,15 +310,14 @@ internal class SandboxBackend(sandbox: SandboxManager?) : Backend {
             failedFileRead(offset, limit, e.message ?: "Read failed")
         }
 
-    override suspend fun fileWrite(path: String, content: String): String? =
-        mgr.fileWrite(path, content)?.let { jsonError("file_write", it, server = "Local Sandbox") }
+    override suspend fun fileWrite(path: String, content: String, expectedSha256: String): String? =
+        mgr.fileWrite(path, content, expectedSha256)?.let { jsonError("file_write", it, server = "Local Sandbox") }
 
     override suspend fun fileEdit(
         path: String,
-        oldString: String,
-        newString: String,
-        replaceAll: Boolean,
-    ): ShellFileEditResult = mgr.fileEdit(path, oldString, newString, replaceAll)
+        edits: List<ShellFileEdit>,
+        expectedSha256: String,
+    ): ShellFileEditResult = mgr.fileEdit(path, edits, expectedSha256)
 
     override suspend fun fileGlob(
         pattern: String,
@@ -328,10 +335,8 @@ internal class SandboxBackend(sandbox: SandboxManager?) : Backend {
         pattern: String,
         basePath: String,
         fileGlob: String,
-    ): Result<Pair<List<ShellClient.GrepMatch>, Boolean>> =
-        mgr.fileGrep(pattern, basePath, fileGlob).map { (matches, truncated) ->
-            matches.map { ShellClient.GrepMatch(it.path, it.line, it.content) } to truncated
-        }
+        options: ShellGrepOptions,
+    ): Result<ShellGrepResult> = mgr.fileGrep(pattern, basePath, fileGlob, options)
 
     override fun close() {}
 }
@@ -350,4 +355,5 @@ private fun failedFileRead(
     limit = if (limit in 1..SHELL_FILE_READ_MAX_BYTES) limit else SHELL_FILE_READ_MAX_BYTES,
     truncated = false,
     error = error,
+    bytesRead = 0,
 )

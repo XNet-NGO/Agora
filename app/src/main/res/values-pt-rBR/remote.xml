@@ -11,7 +11,7 @@
     <string name="remote_sync_hint">Mantenha esta sessão aberta no Codex. As respostas são sincronizadas após serem salvas.</string>
     <string name="remote_refresh">Atualizar</string>
     <string name="remote_load_more">Carregar Mais</string>
-    <string name="remote_check">Já Verifiquei</string>
+    <string name="remote_check">Permitir envio</string>
     <string name="remote_confirm">Continuar Enviando?</string>
     <string name="remote_remove">Remover conexão</string>
     <string name="remote_add_device">Adicionar dispositivo</string>

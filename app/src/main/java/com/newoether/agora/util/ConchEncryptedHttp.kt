@@ -106,6 +106,10 @@ internal class ConchHttpFrames(private val source: BufferedSource, private val k
         sequence++
         return kind to value
     }
+    fun requireEnd() {
+        // The HTTP response body ends even when its connection remains reusable.
+        if (!source.exhausted()) throw ConchChannelException("Bytes after encrypted HTTP terminal frame")
+    }
     fun timeout() = source.timeout()
     fun close() { source.close(); key.fill(0) }
 }
@@ -113,13 +117,21 @@ internal class ConchHttpFrames(private val source: BufferedSource, private val k
 internal class ConchHttpBodySource(private val frames: ConchHttpFrames) : Source {
     private val pending = Buffer()
     private var ended = false
+    private var terminalError: IOException? = null
     override fun read(sink: Buffer, byteCount: Long): Long {
         require(byteCount >= 0)
         if (byteCount == 0L) return 0
+        terminalError?.let { throw it }
         while (pending.size == 0L && !ended) {
             val (kind, frame) = frames.read()
             when (kind) {
-                "http_end" -> ended = true
+                "http_end" -> {
+                    try { frames.requireEnd() } catch (error: IOException) {
+                        terminalError = error
+                        throw error
+                    }
+                    ended = true
+                }
                 "http_body" -> {
                     val raw = frame["body"]?.jsonPrimitive?.content ?: throw ConchChannelException("Missing encrypted bytes")
                     val bytes = try { Base64.decode(raw, Base64.DEFAULT) } catch (error: IllegalArgumentException) {

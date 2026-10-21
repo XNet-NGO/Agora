@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="remote_failed">Remote could not complete this action. See the error details.</string>
-    <string name="remote_unknown">Delivery is unconfirmed. Check the conversation in Codex before sending again.</string>
+    <string name="remote_unknown">Delivery is unconfirmed. Check Codex before sending again. Allow Sending clears this warning; it does not send.</string>
     <string name="remote_rejected">Codex did not accept this message. Check the error details before trying again.</string>
     <string name="remote_storage_failed">Agora could not access local Remote storage. Check available space.</string>
     <string name="remote_network_failed">Cannot reach Filo. Check the target computer, service address and network.</string>

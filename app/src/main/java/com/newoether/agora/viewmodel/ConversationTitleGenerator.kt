@@ -16,8 +16,10 @@ import com.newoether.agora.model.Participant
 import com.newoether.agora.util.Constants
 import com.newoether.agora.util.DebugLog
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.collect
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 private val TITLE_WHITESPACE = Regex("\\s+")
 
@@ -71,44 +73,105 @@ class ConversationTitleGenerator(
         data class Failure(val reason: String) : Result
     }
 
-    suspend fun generateAndPersist(conversationId: String): Result {
+    companion object {
+        // Foreground and headless owners share the repository, so admission is process-wide.
+        private val activeRequests = ConcurrentHashMap<
+            Pair<ConversationRepository, String>, CompletableDeferred<Result>
+        >()
+    }
+
+    suspend fun generateAndPersist(
+        conversationId: String,
+        runtimeSnapshot: ConversationGenerationSnapshot? = null,
+        onStarted: suspend () -> Unit = {},
+    ): Result {
+        val key = conversations to conversationId
+        val completion = CompletableDeferred<Result>()
+        activeRequests.putIfAbsent(key, completion)?.let { return it.await() }
+        try {
+            val result = generate(conversationId, runtimeSnapshot, onStarted)
+            completion.complete(result)
+            return result
+        } catch (e: CancellationException) {
+            completion.completeExceptionally(e)
+            throw e
+        } catch (e: Exception) {
+            DebugLog.e("ConversationTitleGenerator", "Title generation failed", e)
+            val result = Result.Failure(e.localizedMessage ?: "Title generation failed")
+            completion.complete(result)
+            return result
+        } finally {
+            activeRequests.remove(key, completion)
+        }
+    }
+
+    private suspend fun generate(
+        conversationId: String,
+        runtimeSnapshot: ConversationGenerationSnapshot?,
+        onStarted: suspend () -> Unit,
+    ): Result {
+        var summary = ""
+        var sourceModel: String? = null
+        // Freeze the selected path and only its first usable role payloads in one Room read.
+        // Settings, notifications and local-model admission must not delay this source capture.
+        val conversation = conversations.withProviderContextSnapshot {
+            val target = conversations.getConversation(conversationId)
+                ?: return@withProviderContextSnapshot null
+            val topology = conversations.getMessageTopologySnapshot(conversationId)
+            val streaming = runtimeSnapshot
+                ?.takeIf { it.conversationId == conversationId && it.isGenerating }
+                ?.streamingMessage
+                ?.takeIf { live ->
+                    !live.runId.isNullOrBlank() && topology.any { row ->
+                        row.conversationId == conversationId && row.id == live.id &&
+                            row.parentId == live.parentId && row.runId == live.runId &&
+                            row.runSequence == live.runSequence && row.participant == live.participant
+                    }
+                }
+            val path = ConversationUiState.resolvePath(
+                allMessages = topology.map { it.toUiChatMessageStub() },
+                streamingMsg = streaming,
+                selectedChildren = conversations.restoreBranchSelections(conversationId),
+            )
+            suspend fun firstMatchingMessage(participant: Participant): ChatMessage? {
+                for (message in path) {
+                    if (message.participant != participant) continue
+                    val projected = if (streaming != null && message.id == streaming.id) {
+                        streaming
+                    } else {
+                        val entity = conversations.getMessage(message.id) ?: continue
+                        if (entity.conversationId != conversationId) continue
+                        projectProviderMessages(
+                            entities = listOf(entity),
+                            includeStoredTranscriptions = true,
+                        ).singleOrNull() ?: continue
+                    }
+                    val text = if (participant == Participant.USER) {
+                        titleSourceText(projected)
+                    } else {
+                        projected.text.trim()
+                    }
+                    if (text.isNotBlank()) return projected
+                }
+                return null
+            }
+            val firstUser = firstMatchingMessage(Participant.USER)
+            val firstModel = firstMatchingMessage(Participant.MODEL)
+            sourceModel = firstModel?.modelName
+            summary = listOfNotNull(
+                firstUser?.let { "User: ${titleSourceText(it)}" },
+                firstModel?.let { "Assistant: ${it.text.trim().take(500)}" },
+            ).joinToString("\n")
+            target
+        } ?: return Result.Failure("Conversation not found")
+        if (summary.isBlank()) return Result.Failure("Conversation has no usable text")
+
         settings.awaitInitialLoad()
         providers.awaitInitialSync()
-
-        val conversation = conversations.getConversation(conversationId)
-            ?: return Result.Failure("Conversation not found")
-        val path = ConversationUiState.resolvePath(
-            allMessages = conversations.getMessageTopologySnapshot(conversationId)
-                .map { message -> message.toUiChatMessageStub() },
-            streamingMsg = null,
-            selectedChildren = conversations.restoreBranchSelections(conversationId),
-        )
-        suspend fun firstMatchingMessage(
-            participant: Participant,
-            predicate: (ChatMessage) -> Boolean,
-        ): ChatMessage? {
-            for (message in path) {
-                if (message.participant != participant) continue
-                val entity = conversations.getMessage(message.id) ?: continue
-                val projected = projectProviderMessages(
-                    entities = listOf(entity),
-                    includeStoredTranscriptions = true,
-                ).singleOrNull() ?: continue
-                if (predicate(projected)) return projected
-            }
-            return null
-        }
-        val firstUser = firstMatchingMessage(Participant.USER) { message ->
-            titleSourceText(message).isNotBlank()
-        } ?: return Result.Failure("Conversation has no user message")
-        val firstModel = firstMatchingMessage(Participant.MODEL) { message ->
-            message.text.isNotBlank()
-        }
-
         val configuredTitleModel = settings.titleGenerationModel.value
         val prefixedModelId = configuredTitleModel?.takeIf { it.isNotBlank() }
             ?: conversation.modelId?.takeIf { it.isNotBlank() }
-            ?: firstModel?.modelName?.takeIf { it.isNotBlank() }
+            ?: sourceModel?.takeIf { it.isNotBlank() }
             ?: settings.selectedModel.value
         if (prefixedModelId.isBlank()) return Result.Failure("No title model selected")
 
@@ -119,12 +182,6 @@ class ConversationTitleGenerator(
             return Result.Failure("Provider not configured: $providerName")
         }
 
-        val firstUserSource = titleSourceText(firstUser)
-        val summary = if (firstModel != null) {
-            "User: $firstUserSource\nAssistant: ${firstModel.text.take(500)}"
-        } else {
-            firstUserSource
-        }
         val titlePrompt = listOf(
             ChatMessage(
                 text = "Generate a short title (5 words maximum) for this conversation:\n\n" +
@@ -184,6 +241,7 @@ class ConversationTitleGenerator(
             }
         }
 
+        onStarted()
         try {
             // LocalProvider owns process-wide local-model serialization. Acquiring that mutex
             // here as well would re-enter the same non-reentrant lock while collecting its Flow.

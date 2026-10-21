@@ -94,6 +94,12 @@ internal class RemoteViewModel(
         report = { stage, error -> trace(stage, error) },
     )
     private val clients get() = deviceDirectory.clients
+    private val settingsMutation = RemoteSettingsMutation(
+        scope = viewModelScope, mutableState = mutableState,
+        clientForDevice = { clients[it] }, selectionEpoch = { selectionEpoch }, readEpoch = { epoch },
+        acceptPage = { client, id, generation, page -> applyPage(client, id, generation, page, confirmedSettings = true) },
+        readsSettled = { refresh(preserveRuntime = true) }, report = { trace("control_failed", it) },
+    )
 
     init { trace("owner_created"); restoreConnections() }
 
@@ -120,6 +126,7 @@ internal class RemoteViewModel(
             "restore_failed" -> restoreConnections()
             "page_failed" -> loadMore()
             "payload_failed" -> mutableState.value = state.value.copy(hydrationRevision = state.value.hydrationRevision + 1)
+            "models_failed" -> refreshModels()
             "check_failed", "read_failed" -> refresh()
         }
     }
@@ -145,7 +152,7 @@ internal class RemoteViewModel(
     fun editDevice(id: String?) {
         if (state.value.saving || state.value.restoring || (id != null && id !in clients)) return
         selectionEpoch++
-        mutableState.value = state.value.copy(controlling = false, stoppingOwner = null, stoppingTurnId = null)
+        mutableState.value = state.value.copy(controlling = false, stoppingOwner = null, stoppingTurnId = null, stoppingTurnEnded = false)
         invalidateReads()
         mutableState.value = state.value.copy(deviceId = null, session = null, addingDevice = true,
             editedDeviceId = id, storageError = false, failure = null, lastKnownModel = null)
@@ -166,7 +173,7 @@ internal class RemoteViewModel(
         if (id != null && id !in clients) return
         scrollRequests.clear()
         selectionEpoch++
-        mutableState.value = state.value.copy(controlling = false, stoppingOwner = null, stoppingTurnId = null)
+        mutableState.value = state.value.copy(controlling = false, stoppingOwner = null, stoppingTurnId = null, stoppingTurnEnded = false)
         invalidateReads()
         modelEpoch++
         modelLoading?.cancel()
@@ -181,7 +188,7 @@ internal class RemoteViewModel(
     fun selectSession(session: RemoteSession?) {
         scrollRequests.clear()
         selectionEpoch++
-        mutableState.value = state.value.copy(controlling = false, stoppingOwner = null, stoppingTurnId = null)
+        mutableState.value = state.value.copy(controlling = false, stoppingOwner = null, stoppingTurnId = null, stoppingTurnEnded = false)
         invalidateReads()
         mutableState.value = state.value.copy(session = session, nodes = emptyList(), messageGroups = emptyList(), historyCursor = null, queued = emptyList(), failure = null, runtime = null, lastKnownModel = null, composerFocusOwner = null,
             draftSessionId = null, draftSettings = RemoteSettings())
@@ -200,14 +207,15 @@ internal class RemoteViewModel(
         }
     }
 
-    private fun invalidateReads() {
+    private fun invalidateReads(preserveRuntime: Boolean = false) {
         hydration.resetStreaming()
         epoch++
         polling?.cancel()
         paging?.cancel()
         statusPolling?.cancel()
         // Suspend control readiness, not the last native presentation. Reconnecting is not completion.
-        mutableState.value = state.value.copy(loading = false, loadingMore = false, runtime = null, hydrationEnabled = false)
+        mutableState.value = state.value.copy(loading = false, loadingMore = false,
+            runtime = state.value.runtime.takeIf { preserveRuntime }, hydrationEnabled = false)
     }
 
     /**
@@ -231,15 +239,19 @@ internal class RemoteViewModel(
                     mutableState.value = state.value.copy(models = models)
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { trace("models_failed", error) }
+            catch (error: Exception) {
+                if (modelGeneration == modelEpoch && clients[id] === client && state.value.deviceId == id) trace("models_failed", error)
+            }
             finally {
                 if (modelGeneration == modelEpoch) mutableState.value = state.value.copy(modelsLoading = false)
             }
         }
     }
-    fun refresh() {
+    fun refresh() = refresh(preserveRuntime = false)
+
+    private fun refresh(preserveRuntime: Boolean) {
         if (!visible || state.value.restoring || state.value.addingDevice || state.value.isDraft) return
-        invalidateReads()
+        invalidateReads(preserveRuntime)
         val id = state.value.deviceId
         if (id == null) {
             clients.keys.forEach(::checkDevice)
@@ -268,7 +280,7 @@ internal class RemoteViewModel(
                         if (generation != epoch) return@launch
                         mutableState.value = state.value.copy(
                             sessions = page.sessions, sessionCursor = page.nextCursor,
-                            sessionStatuses = mergeListedSessionStatuses(id, page),
+                            sessionStatuses = state.value.mergeListedSessionStatuses(id, page),
                             loading = false, failure = null,
                         )
                         startSessionStatusReads()
@@ -286,8 +298,7 @@ internal class RemoteViewModel(
                 catch (error: Exception) {
                     if (generation == epoch) {
                         val readFailure = requireNotNull(trace("read_failed", error, notify = false))
-                        mutableState.value = state.value.copy(loading = false, runtime = null,
-                            stoppingOwner = null, stoppingTurnId = null)
+                        mutableState.value = state.value.copy(loading = false, runtime = null)
                         // A failed native read is not proof that the device is offline.
                         var reachable = false
                         if (session != null && readFailure in setOf(RemoteFailure.NETWORK, RemoteFailure.SERVICE)) {
@@ -347,9 +358,11 @@ internal class RemoteViewModel(
     }
 
     private suspend fun applyPage(
-        client: FiloClient, sessionId: String, generation: Long, page: RemoteConversationPage, liveControl: Boolean = true,
+        client: FiloClient, sessionId: String, generation: Long, page: RemoteConversationPage,
+        liveControl: Boolean = true, confirmedSettings: Boolean = false,
     ) {
         if (generation != epoch) return
+        val settingsVersion = settingsMutation.snapshotVersion()
         val old = state.value.nodes
         val oldIds = old.mapTo(HashSet()) { it.id }
         val owner = state.value.owner ?: return
@@ -374,21 +387,30 @@ internal class RemoteViewModel(
             val groups = projectRemoteTopology(nodes, runtime)
             for (chunk in incoming.asReversed()) hydration.accept(owner, chunk, groups, live = false)
             if (generation != epoch) return
+            val acceptsSettings = confirmedSettings || settingsMutation.acceptsSnapshot(settingsVersion, owner)
+            val previousRuntime = settingsMutation.confirmedRuntime(owner) ?: state.value.runtime
+            val nativeRuntime = if (acceptsSettings) page.runtime else page.runtime?.copy(
+                model = previousRuntime?.model ?: state.value.lastKnownModel,
+                effort = previousRuntime?.effort, serviceTier = previousRuntime?.serviceTier,
+                serviceTierKnown = previousRuntime?.serviceTierKnown == true,
+            )
             mutableState.value = state.value.copy(
                 nodes = nodes, messageGroups = groups, hydrationEnabled = visible,
                 historyCursor = if (old.isEmpty()) incoming.last().nextCursor else state.value.historyCursor,
                 queued = page.queued, loading = false, failure = null,
-                runtime = page.runtime.takeIf { liveControl },
-                lastKnownModel = page.runtime?.model ?: state.value.lastKnownModel,
+                runtime = nativeRuntime.takeIf { liveControl },
+                lastKnownModel = nativeRuntime?.model ?: state.value.lastKnownModel,
             )
         }
         state.value.deviceId?.let { id -> updateDevice(id) { it.copy(status = RemoteDeviceStatus.CONNECTED, failure = null) } }
-        state.value.attempts[owner]?.let { attempt -> confirmDelivery(owner, attempt, state.value.nodes) }
-        settleStop()
-        page.runtime?.takeIf { it.status in setOf("idle", "active", "ready") }?.let { runtime ->
+        state.value.attempts[owner]?.let { attempt -> confirmDelivery(owner, attempt, page.inputReceipts) }
+        settleStop(page.runtime)
+        page.runtime?.takeIf { it.status in setOf("idle", "active", "ready") || it.completedTurnId != null }?.let { runtime ->
             val key = "${state.value.deviceId}/$sessionId"
+            val incomingStatus = RemoteSessionStatus(sessionId, runtime.status.takeIf { it in setOf("idle", "active", "ready") },
+                runtime.activeTurnId, runtime.completedTurnId)
             mutableState.value = state.value.copy(sessionStatuses = state.value.sessionStatuses +
-                (key to RemoteSessionStatus(sessionId, runtime.status, runtime.activeTurnId, runtime.completedTurnId)))
+                (key to reconcileRemoteSessionStatus(state.value.sessionStatuses[key], incomingStatus)))
         }
         page.runtime?.completedTurnId?.let { turn ->
             val address = state.value.deviceId ?: return@let
@@ -405,26 +427,6 @@ internal class RemoteViewModel(
                 }
             }
         }
-    }
-
-    private fun mergeListedSessionStatuses(
-        address: String, page: RemoteSessionPage,
-    ): Map<String, RemoteSessionStatus> {
-        val previous = state.value.sessionStatuses
-        val exact = page.statuses.associateBy { it.id }
-        val listed = page.sessions.mapNotNull { session ->
-            val key = "$address/${session.id}"
-            val old = previous[key]
-            val item = exact[session.id]
-                ?: session.status?.let { old?.copy(status = it) ?: RemoteSessionStatus(session.id, it) }
-                ?: return@mapNotNull null
-            val resolved = if (item.status == null && old != null) old else item
-            key to resolved.copy(hasUnreadTurn = resolved.hasUnreadTurn ||
-                item.completedTurnId != null && (old?.activeTurnId == item.completedTurnId &&
-                    old.completedTurnId != item.completedTurnId ||
-                    old?.hasUnreadTurn == true && old.completedTurnId == item.completedTurnId))
-        }.toMap()
-        return previous + listed
     }
 
     fun observeSessions(deviceId: String, ids: List<String>) {
@@ -455,7 +457,7 @@ internal class RemoteViewModel(
                         val page = client.sessions(cursor)
                         if (selected != selectionEpoch || clients[address] !== client || !visible) return@launch
                         mutableState.value = state.value.copy(
-                            sessionStatuses = mergeListedSessionStatuses(address, page),
+                            sessionStatuses = state.value.mergeListedSessionStatuses(address, page),
                         )
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
@@ -469,13 +471,15 @@ internal class RemoteViewModel(
         }
     }
 
-    private fun settleStop() {
+    private fun settleStop(runtime: RemoteRuntime? = state.value.runtime) {
         val snapshot = state.value
-        val runtime = snapshot.runtime ?: return
-        if (!snapshot.isStopping || snapshot.controlling) return
-        if (!runtime.isRunning || runtime.activeTurnId != null && runtime.activeTurnId != snapshot.stoppingTurnId) {
-            mutableState.value = snapshot.copy(stoppingOwner = null, stoppingTurnId = null)
-        }
+        if (!snapshot.isStopping) return
+        val ended = snapshot.stoppingTurnEnded || runtime?.let {
+            it.status in setOf("idle", "ready") || it.completedTurnId == snapshot.stoppingTurnId ||
+                it.isRunning && it.activeTurnId != null && it.activeTurnId != snapshot.stoppingTurnId
+        } == true
+        if (ended) mutableState.value = if (snapshot.controlling) snapshot.copy(stoppingTurnEnded = true)
+        else snapshot.copy(stoppingOwner = null, stoppingTurnId = null, stoppingTurnEnded = false)
     }
 
     fun newSession() {
@@ -483,7 +487,7 @@ internal class RemoteViewModel(
         if (snapshot.deviceId !in clients || snapshot.isDraft || snapshot.controlling) return
         scrollRequests.clear()
         selectionEpoch++
-        mutableState.value = state.value.copy(controlling = false, stoppingOwner = null, stoppingTurnId = null)
+        mutableState.value = state.value.copy(controlling = false, stoppingOwner = null, stoppingTurnId = null, stoppingTurnEnded = false)
         invalidateReads()
         val id = UUID.randomUUID().toString()
         // A local composer identity survives promotion to the first native session.
@@ -502,64 +506,28 @@ internal class RemoteViewModel(
         val snapshot = state.value
         val session = snapshot.session ?: return
         val available = snapshot.models.firstOrNull { it.id == model } ?: return
-        if (!snapshot.canEditSettings || model == snapshot.selectedModel) return
-        val settings = if (available.reasoningEfforts != null) snapshot.settingsForModel(available) else RemoteSettings(model = model)
+        if (!snapshot.canChooseModel || model == snapshot.selectedModel) return
+        val settings = RemoteSettings(available.id,
+            effort = if (available.reasoningEfforts != null) snapshot.settingsForModel(available).effort else null,
+            serviceTier = snapshot.selectedServiceTier?.takeIf { tier -> available.serviceTiers.orEmpty().any { it.id == tier } },
+            updateServiceTier = available.serviceTiers != null)
         if (snapshot.isDraft) {
-            mutableState.value = snapshot.copy(draftSettings = snapshot.draftSettings.merge(settings))
-        } else if (available.reasoningEfforts == null) {
+            mutableState.value = snapshot.copy(draftSettings = settings)
+        } else {
             val selected = selectionEpoch
-            control { client -> client.setModel(session.id, model); if (selected == selectionEpoch) refresh() }
-        } else changeSettings(settings)
-    }
-
-    fun setThinkingEnabled(enabled: Boolean) {
-        val snapshot = state.value
-        if (enabled == (snapshot.selectedEffort != null && snapshot.selectedEffort != "none")) return
-        val model = snapshot.settingsModel ?: return
-        val effort = if (enabled) model.defaultReasoningEffort?.takeUnless { it == "none" }
-            ?: model.reasoningEfforts?.firstOrNull { it != "none" } else "none"
-        effort?.let(::setThinkingLevel)
-    }
-
-    fun setThinkingLevel(effort: String) {
-        val snapshot = state.value
-        if (effort == snapshot.selectedEffort || effort !in snapshot.settingsModel?.reasoningEfforts.orEmpty()) return
-        changeSettings(RemoteSettings(effort = effort))
-    }
-
-    fun setServiceTierEnabled(enabled: Boolean) {
-        val snapshot = state.value
-        if (enabled == (snapshot.selectedServiceTier != null)) return
-        val model = snapshot.settingsModel ?: return
-        val tier = if (enabled) model.defaultServiceTier?.takeIf { value -> model.serviceTiers.orEmpty().any { it.id == value } }
-            ?: model.serviceTiers?.firstOrNull()?.id ?: return else null
-        setServiceTier(tier)
-    }
-
-    fun setServiceTier(tier: String?) {
-        val snapshot = state.value
-        if (snapshot.settingsModel?.serviceTiers == null || tier == snapshot.selectedServiceTier ||
-            tier != null && snapshot.settingsModel?.serviceTiers.orEmpty().none { it.id == tier }) return
-        changeSettings(RemoteSettings(serviceTier = tier, updateServiceTier = true))
-    }
-
-    private fun changeSettings(settings: RemoteSettings) {
-        val snapshot = state.value
-        if (!snapshot.canEditSettings) return
-        if (snapshot.isDraft) {
-            mutableState.value = snapshot.copy(draftSettings = snapshot.draftSettings.merge(settings))
-            return
-        }
-        val selected = selectionEpoch
-        control { client ->
-            val id = snapshot.session!!.id
-            client.updateSettings(id, settings)
-            if (selected == selectionEpoch && clients[snapshot.deviceId] === client && visible) {
-                val generation = epoch
-                applyPage(client, id, generation, client.conversation(id))
+            control { client ->
+                if (available.reasoningEfforts == null && available.serviceTiers == null) {
+                    client.setModel(session.id, model)
+                    if (selected == selectionEpoch) refresh()
+                } else settingsMutation.changeModel(client, session.id, settings)
             }
         }
     }
+
+    fun setThinkingEnabled(enabled: Boolean) = settingsMutation.setThinkingEnabled(enabled)
+    fun setThinkingLevel(effort: String) = settingsMutation.setThinkingLevel(effort)
+    fun setServiceTierEnabled(enabled: Boolean) = settingsMutation.setServiceTierEnabled(enabled)
+    fun setServiceTier(tier: String?) = settingsMutation.setServiceTier(tier)
 
     fun stop() {
         val snapshot = state.value
@@ -576,7 +544,8 @@ internal class RemoteViewModel(
         val owner = state.value.owner
         mutableState.value = state.value.copy(controlling = true,
             stoppingOwner = if (stoppingTurnId != null) owner else state.value.stoppingOwner,
-            stoppingTurnId = stoppingTurnId ?: state.value.stoppingTurnId)
+            stoppingTurnId = stoppingTurnId ?: state.value.stoppingTurnId,
+            stoppingTurnEnded = false)
         viewModelScope.launch {
             var succeeded = false
             try { operation(client); succeeded = true }
@@ -585,14 +554,16 @@ internal class RemoteViewModel(
                 val failure = trace("control_failed", error)
                 if (selected == selectionEpoch) mutableState.value = state.value.copy(failure = failure)
             } finally {
-                if (selected == selectionEpoch) mutableState.value = state.value.copy(controlling = false,
-                    settingsRevision = state.value.settingsRevision + 1)
-                if (stoppingTurnId != null && state.value.stoppingOwner == owner &&
-                    state.value.stoppingTurnId == stoppingTurnId && (!succeeded || selected != selectionEpoch)) {
-                    mutableState.value = state.value.copy(stoppingOwner = null, stoppingTurnId = null)
+                if (selected == selectionEpoch) {
+                    mutableState.value = state.value.copy(controlling = false,
+                        settingsRevision = state.value.settingsRevision + 1)
+                    if (stoppingTurnId != null && state.value.stoppingOwner == owner &&
+                        state.value.stoppingTurnId == stoppingTurnId && !succeeded) {
+                        mutableState.value = state.value.copy(stoppingOwner = null, stoppingTurnId = null, stoppingTurnEnded = false)
+                    }
+                    // A Stop receipt and the native end-of-turn snapshot may arrive in either order.
+                    settleStop()
                 }
-                // A Stop receipt and the native end-of-turn snapshot may arrive in either order.
-                settleStop()
             }
         }
     }
@@ -644,7 +615,7 @@ internal class RemoteViewModel(
                         val sessions = (state.value.sessions + page.sessions).distinctBy { it.id }
                         mutableState.value = state.value.copy(
                             sessions = sessions,
-                            sessionStatuses = mergeListedSessionStatuses(requireNotNull(snapshot.deviceId), page),
+                            sessionStatuses = state.value.mergeListedSessionStatuses(requireNotNull(snapshot.deviceId), page),
                             sessionCursor = page.nextCursor, failure = null,
                         )
                     }
@@ -678,6 +649,7 @@ internal class RemoteViewModel(
             mutableState.value = state.value.copy(nodes = nodes, messageGroups = groups,
                 historyCursor = page.nextCursor, failure = null)
         }
+        state.value.attempts[owner]?.let { confirmDelivery(owner, it, page.inputReceipts) }
     }
 
     fun searchHistory(query: String): kotlinx.coroutines.flow.Flow<List<com.newoether.agora.ui.chat.ConversationSearchMatch>> {
@@ -709,13 +681,17 @@ internal class RemoteViewModel(
 
     fun send() {
         val snapshot = state.value
-        if (!visible || snapshot.controlling || snapshot.isStopping) return
+        if (!visible || snapshot.controlling || snapshot.isStopping || snapshot.settingsPending) return
         val owner = snapshot.owner ?: return
         val client = clients[snapshot.deviceId] ?: return
         val text = snapshot.drafts[owner].orEmpty()
         val attachments = snapshot.attachments[owner].orEmpty()
         if ((text.isBlank() && attachments.isEmpty()) || snapshot.attempts[owner]?.delivery in
             setOf(RemoteDelivery.SUBMITTING, RemoteDelivery.ACCEPTED, RemoteDelivery.UNKNOWN)) return
+        if (snapshot.isDraft && snapshot.settingsModel == null) {
+            trace("models_failed", FiloInputException())
+            return
+        }
         if (attachments.any { it.importState != com.newoether.agora.model.AttachmentImportState.READY }) {
             trace("send_failed", RemoteAttachmentException("Finish or remove pending attachments before sending")); return
         }
@@ -729,13 +705,14 @@ internal class RemoteViewModel(
                 uploadComplete = true
                 if (selected != selectionEpoch || clients[snapshot.deviceId] !== client) throw FiloInputException()
                 var sessionId = snapshot.session!!.id
+                var acceptedTurnId: String? = null
                 if (snapshot.isDraft) {
                     // One mutation: the session is created together with this first message.
-                    val settingsModel = snapshot.settingsModel
-                    val settings = if (settingsModel == null) null else if (settingsModel.reasoningEfforts != null) RemoteSettings(
-                        settingsModel.id, snapshot.selectedEffort, snapshot.selectedServiceTier, updateServiceTier = true,
-                    ) else RemoteSettings(model = settingsModel.id)
+                    val settingsModel = requireNotNull(snapshot.settingsModel)
+                    val settings = RemoteSettings(settingsModel.id, snapshot.selectedEffort, snapshot.selectedServiceTier,
+                        updateServiceTier = settingsModel.serviceTiers != null)
                     val created = client.create(text, attempt.clientId, uploads.map { it.id }, settings)
+                    acceptedTurnId = created.acceptedTurnId
                     // Creation includes the first turn, even if its owner is no longer selected.
                     mutableState.value = state.value.copy(
                         sessionOwners = state.value.sessionOwners + ("${snapshot.deviceId}/${created.id}" to owner),
@@ -746,7 +723,7 @@ internal class RemoteViewModel(
                         if (state.value.attempts[owner]?.clientId == attempt.clientId &&
                             state.value.attempts[owner]?.delivery == RemoteDelivery.SUBMITTING) {
                             mutableState.value = state.value.copy(attempts = state.value.attempts +
-                                (owner to attempt.copy(delivery = RemoteDelivery.ACCEPTED)))
+                                (owner to attempt.copy(delivery = RemoteDelivery.ACCEPTED, turnId = acceptedTurnId)))
                         }
                         return@launch
                     }
@@ -758,11 +735,11 @@ internal class RemoteViewModel(
                     )
                     refresh()
                 } else if (selected != selectionEpoch || clients[snapshot.deviceId] !== client) throw FiloInputException()
-                if (!snapshot.isDraft) client.send(sessionId, text, attempt.clientId, uploads.map { it.id })
+                if (!snapshot.isDraft) acceptedTurnId = client.send(sessionId, text, attempt.clientId, uploads.map { it.id })
                 if (state.value.attempts[owner]?.clientId == attempt.clientId &&
                     state.value.attempts[owner]?.delivery == RemoteDelivery.SUBMITTING) {
                     mutableState.value = state.value.copy(attempts = state.value.attempts +
-                        (owner to attempt.copy(delivery = RemoteDelivery.ACCEPTED)))
+                        (owner to attempt.copy(delivery = RemoteDelivery.ACCEPTED, turnId = acceptedTurnId)))
                     confirmDelivery(owner, attempt)
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
@@ -782,16 +759,21 @@ internal class RemoteViewModel(
         }
     }
 
-    private fun confirmDelivery(owner: String, attempt: RemoteAttempt, fresh: List<RemoteMessageNode> = state.value.nodes) {
-        if (state.value.attempts[owner]?.clientId != attempt.clientId) return
-        if (state.value.attempts[owner]?.delivery == RemoteDelivery.DELIVERED || state.value.owner != owner) return
-        val message = fresh.firstOrNull { it.role == "user" && it.clientId == attempt.clientId } ?: return
+    private fun confirmDelivery(owner: String, attempt: RemoteAttempt, receipts: List<RemoteInputReceipt> = emptyList()) {
+        val current = state.value.attempts[owner]?.takeIf { it.clientId == attempt.clientId } ?: return
+        if (current.delivery == RemoteDelivery.DELIVERED || state.value.owner != owner) return
+        val message = state.value.nodes.firstOrNull { it.role == "user" && it.clientId == attempt.clientId &&
+            (current.turnId == null || current.turnId == it.turnId) }
+        val receipt = receipts.firstOrNull { it.clientId == current.clientId &&
+            it.turnId.isNotBlank() && it.messageId.isNotBlank() && (current.turnId == null || current.turnId == it.turnId) }
+        if (message == null && receipt == null) return
         state.value.attachments[owner].orEmpty().forEach { attachmentStore?.remove(it) }
         mutableState.value = state.value.copy(
             attachments = state.value.attachments - owner,
             drafts = if (state.value.drafts[owner] == attempt.text) state.value.drafts - owner else state.value.drafts,
-            attempts = state.value.attempts + (owner to attempt.copy(delivery = RemoteDelivery.DELIVERED)),
+            attempts = state.value.attempts + (owner to current.copy(delivery = RemoteDelivery.DELIVERED)),
         )
-        scrollRequests.requestAbsoluteBottomAfter(owner, message.nativeId ?: message.id)
+        val target = message?.let { it.nativeId ?: it.id } ?: state.value.messageGroups.lastOrNull()?.stub?.id
+        if (target != null) scrollRequests.requestAbsoluteBottomAfter(owner, target)
     }
 }

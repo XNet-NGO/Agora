@@ -209,17 +209,17 @@ internal class GenerationToolOverlay(
         )
     }
 
-    fun releaseCommittedResponseState(toolCallIds: Set<String>) {
+    fun markCommittedRound(toolCallIds: Set<String>, toolRoundId: String) {
         if (toolCallIds.isEmpty()) return
         segments.indices.forEach { index ->
             val segment = segments[index]
             if (
                 segment.type == "tool" &&
-                segment.toolCallId in toolCallIds &&
-                (segment.responseOutputItems.isNotEmpty() ||
-                    segment.responseOutputItemProvider != null)
+                segment.toolRoundId == null &&
+                segment.toolCallId in toolCallIds
             ) {
                 segments[index] = segment.copy(
+                    toolRoundId = toolRoundId,
                     responseOutputItems = emptyList(),
                     responseOutputItemProvider = null,
                 )

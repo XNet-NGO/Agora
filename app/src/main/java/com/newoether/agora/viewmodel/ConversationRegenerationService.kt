@@ -80,6 +80,7 @@ internal class ConversationRegenerationService(
             var runBound = false
             var stopFinalizationClaimed = false
             try {
+                if (!state.acquireGenerationAdmission(uiToken, executionCoordinator)) return@generation
                 if (!transitions.awaitFade(transition.id)) return@generation
                 if (
                     !state.isCurrentToken(uiToken) ||

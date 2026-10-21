@@ -13,8 +13,12 @@ redirect its global backend, write native transcripts or acquire a competing wri
 Failed desktop discovery/dispatch cannot fall back to another host, queue or fork.
 Every operation prefers verified Codex Desktop IPC; only an established capability
 gap permits an additional unchanged Desktop-provided runtime. No separate Codex CLI
-installation or desktop page/focus/input automation is allowed. Filo-created new tasks
-may execute on that additional runtime; ordinary desktop tasks keep their owner.
+installation or desktop page/focus/input automation is allowed. Filo-created tasks may
+execute on that runtime. An existing idle task may be recovered only inside an explicit
+Send or settings request after verifying the native account, idle state and absent
+IPC owner. Recheck ownership before allocation and preserve native resume writer-lock
+conflicts. Browsing, subscriptions, active state and unknown outcomes grant no writer
+authority. An existing IPC owner always takes precedence.
 Filo service stop/crash/kill/removal must not affect normal Codex or accepted native
 execution. Independent completion and writer release require actual qualification.
 
@@ -109,12 +113,30 @@ Cache the last confirmed row status by device and session for the Remote owner l
 Navigation and failed/unknown status reads retain it; visible-row reads and real chat snapshots
 update it. Removing a device/session or replacing a connection clears its cached entries.
 Each catalog response includes exact available row status, active-turn ID, completed-turn ID and
-native unread state. Initial entry and later list pages merge those fields together. Visibility
+native unread state. Initial entry and later list pages merge those fields together. A directly
+observed latest native terminal projects idle even after executor retirement; a missing owner,
+missing terminal, bounded-out record or newer start never establishes idle. Visibility
 must not immediately trigger another network request. Subsequent polling uses the same catalog
 endpoint and its page cursor, never a separate status endpoint. Unknown/failed native status
 preserves the last confirmed value; it cannot fabricate idle, completion or execution authority.
 This is presentation state only; Filo verifies native ownership/state at dispatch, and Stop requires its exact native turn.
 
+The session catalog title is the configured device name (localized Device fallback), replacing
+Sessions. Immediately below it, a horizontally scrollable chip row currently contains one
+informational Codex Desktop chip with the existing OpenAI icon and an 8dp status dot. The chip
+has a 40dp-high capsule shape with secondaryContainer/onSecondaryContainer colors, no outline,
+and a bounded press ripple. Press feedback
+never navigates, selects a provider, changes connection state or sends a request; the chip retains
+its informational accessibility semantics. The dot
+reflects the selected device's existing authenticated Filo connection state: connected is Online,
+connecting is Connecting, otherwise Offline. It does not claim a separate native Desktop writer
+health check. Keep the chip visible during load, failure and native mutations; status uses a
+200ms opacity Crossfade in fixed geometry, including Reduced Motion. Do not add discovery,
+provider registries, extra requests or inactive future providers for this presentation.
+
+Sessions keeps row detail/More menus and read-only navigation available while rename, archive
+or another native mutation is pending. Busy admission belongs to the conflicting mutation,
+not the menu trigger or unrelated read-only controls. Opening a menu never submits a mutation.
 Sessions automatically loads the next cursor at the laid-out list bottom. Preserve rows
 and scroll position, reject repeated cursors, fence late pages and retain explicit error
 retry. There is no Refresh or Load More button. Sessions alone shows a bottom 4dp progress
@@ -126,7 +148,8 @@ subscription. Compose the original input bar immediately, allowing a local draft
 history and native state are pending. There is no history-admission registry, resume POST,
 read-only composer notice or Continue this conversation button. Failed operations retain
 readable content and report through Snackbar; they do not disable explicit Send retry.
-Execution requires the original owner and cannot fall back to a competing helper writer.
+Execution uses the verified original owner, or the explicitly admitted idle recovery
+path above; it never takes over an active or unknown native writer.
 
 Opening publishes only the latest bounded packet and settles at its bottom, including when
 it contains only tool/thinking records. Never scan older packets for ordinary text or a group
@@ -265,7 +288,11 @@ existing check action in Snackbar before any new attempt; no automatic retry or 
 Reuse original ComposerSendButton: active + empty draft means Stop, text means Send/steer,
 submission/Stop settlement means Busy. Keep pending Stop through both HTTP success and
 native end/replacement of that exact turn, regardless of arrival order. Failure clears
-pending presentation without pretending idle. Client-ID confirmation clears only unchanged
+pending presentation without pretending idle. Client-ID confirmation requires the matching native turn and user-message identity.
+Bounded `inputReceipts` carry that evidence independently of the visible page; an
+unrelated receipt or an off-page text match cannot acknowledge a send. Native
+`completedTurnId` survives executor retirement in runtime and catalog statuses.
+`notLoaded` alone cannot settle a turn or clear a pending Stop. Client-ID confirmation clears only unchanged
 submitted text, after the original Busy acknowledgement, and emits one original animated
 scroll. Navigation and repeated reconciliation cannot duplicate it.
 
@@ -288,8 +315,21 @@ Native None, when supported, and default tier remain selectable on their sliders
 Unknown current values do not open a falsely preselected panel.
 Ordinary ChatApp defaults and panels remain unchanged. Ultra remains Ultra. Unsupported
 none/budget/tier options are absent/disabled; unknown current values stay unknown.
-Each explicit setting change issues one request and reads native truth; failure preserves
-the prior value and settles the panel feedback gate. Settings apply to subsequent turns.
+Explicit Thinking and Service Tier choices update their presentation optimistically and keep
+both controls usable while native confirmation is pending. Native runtime remains authoritative;
+this transient projection must not fabricate an applied native setting or overwrite runtime.
+For one native owner, serialize setting mutations and merge newer unsent choices into a bounded
+latest patch. Omitted fields stay unchanged and explicit `serviceTier:null` selects native Default.
+Each dispatched patch is attempted once and requires native application/read-back for success;
+never replay a mutation automatically. Older snapshots or acknowledgements cannot replace a
+newer optimistic choice. Failure removes only the affected optimistic choice, restores the last
+confirmed native value, settles the original panel feedback gate, and reports through the existing
+Snackbar. A stale failure cannot roll back a newer choice or affect a different selected owner.
+Keep model switching and Send behind outstanding settings so they cannot overtake the user's
+chosen parameters. Draft choices remain local until first Send. Unknown tier
+is distinct from confirmed Default (`serviceTierKnown:true` with null/default).
+The native model catalog alone defines supported efforts, tiers and defaults.
+Settings apply to subsequent turns.
 Draft choices apply after one native creation and before first Send. If settings fail after
 known creation, explicit retry uses the same native ID. Unknown creation/send stays guarded.
 The owner-approved creation flow uses native APIs without desktop control, preferring
@@ -315,6 +355,8 @@ or mark a failed turn as generating. Error messages do not disable an explicit S
 No delivery-status text/card belongs above the composer. Rejected/unknown delivery details
 use the original Snackbar. Clicking Send with unknown prior delivery shows the existing
 check action in that Snackbar; acknowledging it clears the guard without sending any input.
+The action is labeled Allow Sending (localized), and the notice explicitly explains that it
+only clears the warning and does not send. A new Send tap is still required.
 
 Filo bounds conversation pages to 256KiB/128 records with explicit tool previews. Android
 limits SSE lines/HTTP bodies to 1MiB before UTF-8 allocation, including missing delimiters.

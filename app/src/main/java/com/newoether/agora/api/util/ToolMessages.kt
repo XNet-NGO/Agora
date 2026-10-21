@@ -320,13 +320,12 @@ private fun addGeneratedImageContextNote(text: String, imageCount: Int): String 
 }
 
 /**
- * Merges consecutive non-tool messages that share the same participant.
- * This handles orphans left by message deletion (e.g. two user messages
- * in a row after removing an assistant reply) and keeps the message list
- * compliant with providers that require strict role alternation.
+ * Merges consecutive non-user, non-tool messages that share the same participant.
+ * Ordinary USER rows retain their identities and per-message payloads, including when
+ * several inputs belong to one Run. Legacy assistant fragments can still be combined.
  *
- * Tool messages (tool_/result_) pass through unchanged — they are validated
- * separately by [validateToolMessages].
+ * Tool messages (tool_/result_) pass through unchanged and are validated separately
+ * by [validateToolMessages].
  */
 fun mergeConsecutiveSameRole(messages: List<ChatMessage>): List<ChatMessage> {
     if (messages.isEmpty()) return messages
@@ -336,7 +335,7 @@ fun mergeConsecutiveSameRole(messages: List<ChatMessage>): List<ChatMessage> {
         val current = messages[i]
         val isTool = current.id.startsWith(Constants.TOOL_MSG_PREFIX) ||
             current.id.startsWith(Constants.RESULT_MSG_PREFIX)
-        if (isTool) {
+        if (isTool || current.participant == Participant.USER) {
             result.add(current)
             i++
             continue

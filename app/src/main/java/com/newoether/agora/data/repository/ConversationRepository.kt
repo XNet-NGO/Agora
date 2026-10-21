@@ -48,13 +48,16 @@ class ConversationRepository(
     internal val chatDao: ChatDao,
     /** Non-null in production; null is an explicit DAO-isolated unit-test seam. */
     private val database: ChatDatabase?,
-    private val scheduleMaintenance: () -> Unit = { MaintenanceDebtWorker.schedule() },
+    internal val scheduleMaintenance: () -> Unit = { MaintenanceDebtWorker.schedule() },
     private val maintenanceDebtDao: MaintenanceDebtDao? = database?.maintenanceDebtDao(),
+    internal val generationErrorFormatter: (String) -> String = { it.ifBlank { "Failed to generate" } },
     private val semanticModelSnapshotProvider: suspend () -> SemanticModelSnapshot = {
         semanticModelSnapshot("", emptyList())
     },
 ) {
     private val branchSelections = ConversationBranchSelections(chatDao)
+    // SubagentManager alone admits/removes these jobs; observers share their exact lifetime.
+    internal val subagentJobs = kotlinx.coroutines.flow.MutableStateFlow<Map<String, kotlinx.coroutines.Job>>(emptyMap())
 
     // ── Conversations ─────────────────────────────────────────
 
@@ -182,34 +185,9 @@ class ConversationRepository(
     suspend fun touchConversationData(conversationId: String): Boolean =
         chatDao.touchConversationData(conversationId, System.currentTimeMillis()) == 1
 
-    suspend fun deleteConversation(id: String) {
-        var scheduled = false
-        withSemanticTransaction(updatedAt = System.currentTimeMillis()) {
-            val conversation = chatDao.getConversation(id) ?: return@withSemanticTransaction
-            val draftAttachmentsRaw = conversation.draftAttachments
-            val draftAttachments = draftAttachmentsRaw.decodeSelectedAttachments()
-            val attachmentReferences = mutableListOf<MessageAttachmentReference>()
-            var afterId: String? = null
-            while (true) {
-                val page = chatDao.getConversationMessageAttachmentReferencesPage(
-                    conversationId = id,
-                    afterId = afterId,
-                    limit = ATTACHMENT_REFERENCE_PAGE_SIZE,
-                )
-                attachmentReferences += page
-                afterId = page.lastOrNull()?.id
-                if (page.size < ATTACHMENT_REFERENCE_PAGE_SIZE) break
-            }
-            chatDao.deleteEmbeddingsByConversation(id)
-            chatDao.deleteMessagesByConversation(id)
-            chatDao.deleteConversation(id)
-            scheduled = enqueueMessageAttachmentDebt(attachmentReferences) or when {
-                draftAttachmentsRaw != null && draftAttachments == null -> enqueueAttachmentReconcile()
-                else -> enqueueAttachmentDebt(draftAttachments.orEmpty().reclaimablePaths())
-            }
-        }
-        if (scheduled) scheduleMaintenance()
-    }
+    var prepareConversationDeletion: suspend (String) -> Unit = {}
+
+    suspend fun deleteConversation(id: String) = deleteConversationWithChildren(id)
 
     // ── Messages ──────────────────────────────────────────────
 
@@ -261,6 +239,9 @@ class ConversationRepository(
         at: Long = System.currentTimeMillis(),
         touchConversationOnAdmission: Boolean,
     ): RunGraphCommit = withSemanticTransaction(messages.map(MessageEntity::id), at) {
+        messages.filter { it.participant == com.newoether.agora.model.Participant.USER }.forEach {
+            commitSubagentReceipts(run.conversationId, com.newoether.agora.model.MessageSource.decode(it.sourceJson), at)
+        }
         chatDao.createRunWithMessages(
             run,
             messages,
@@ -338,14 +319,17 @@ class ConversationRepository(
         chatDao.createForkGraph(conversation, runs, messages, sourceToForkMessageIds)
     }
 
+    internal var onSubagentWaitCommitted: (suspend (String, Map<String, String>) -> Unit)? = null
     suspend fun appendToolRoundToRun(
         messages: List<MessageEntity>,
         expectedPass: Int,
     ): ToolRoundCommit {
         require(messages.isNotEmpty() && messages.all { it.runId.isNotBlank() })
-        return withSemanticTransaction(messages.map(MessageEntity::id)) {
+        val receipts = linkedMapOf<String, String>()
+        val commit = withSemanticTransaction(messages.map(MessageEntity::id)) {
             chatDao.appendToolRoundToRun(messages, expectedPass).also { commit ->
                 if (commit.inserted) {
+                    commitSubagentWaitReceipts(messages, receipts)
                     check(
                         chatDao.touchConversationData(
                             messages.first().conversationId,
@@ -355,6 +339,8 @@ class ConversationRepository(
                 }
             }
         }
+        if (receipts.isNotEmpty()) notifySubagentWaitCommitted(messages.first().conversationId, receipts)
+        return commit
     }
 
     suspend fun recoverConversationRuntime(
@@ -462,6 +448,8 @@ class ConversationRepository(
             )
         }
 
+    var onSubagentTerminal: ((String) -> Unit)? = null
+
     /** Atomically persists a terminal model snapshot and terminalizes its Run. */
     suspend fun finishGeneration(
         message: ChatMessage,
@@ -471,16 +459,22 @@ class ConversationRepository(
         reason: RunEndReason,
         markConversationUnread: Boolean = false,
         at: Long = System.currentTimeMillis(),
-    ): Boolean = withSemanticTransaction(listOf(message.id), at) {
-        chatDao.finishGeneration(
-            checkpoint = message.toStreamCheckpoint(),
-            conversationId = conversationId,
-            runId = runId,
-            status = status,
-            reason = reason,
-            at = at,
-            markConversationUnread = markConversationUnread,
-        )
+    ): Boolean {
+        val applied = withSemanticTransaction(listOf(message.id), at) {
+            val committed = chatDao.finishGeneration(
+                checkpoint = message.toStreamCheckpoint(),
+                conversationId = conversationId,
+                runId = runId,
+                status = status,
+                reason = reason,
+                at = at,
+                markConversationUnread = markConversationUnread,
+            )
+            if (committed) persistSubagentTerminal(conversationId, at, message.id)
+            committed
+        }
+        if (applied) onSubagentTerminal?.invoke(conversationId)
+        return applied
     }
 
     /** Atomically persists the final stopped snapshot(s) and terminalizes their Run. */
@@ -499,7 +493,7 @@ class ConversationRepository(
             return runId == null || run == null
         }
         val applied = withSemanticTransaction(messages.map(ChatMessage::id), at) {
-            chatDao.finishStoppedGeneration(
+            val committed = chatDao.finishStoppedGeneration(
                 checkpoints = messages.map {
                     it.copy(status = MessageStatus.STOPPED).toStreamCheckpoint()
                 },
@@ -507,8 +501,13 @@ class ConversationRepository(
                 runId = runId,
                 at = at,
             )
+            if (committed) persistSubagentTerminal(conversationId, at, messages.lastOrNull()?.id)
+            committed
         }
-        if (applied) return true
+        if (applied) {
+            onSubagentTerminal?.invoke(conversationId)
+            return true
+        }
         // Idempotent retry: a previous attempt may have committed but its caller was cancelled
         // before observing the result.
         return runId == null || chatDao.getRun(runId)?.status?.isTerminal != false
@@ -664,8 +663,8 @@ class ConversationRepository(
     suspend fun getAllConversationsList(): List<ChatEntity> =
         chatDao.getAllConversationsList()
 
-    suspend fun getSearchableConversation(id: String): ChatEntity? =
-        chatDao.getSearchableConversation(id)
+    suspend fun getSearchableConversation(id: String, ownerConversationId: String? = null): ChatEntity? =
+        chatDao.getSearchableConversation(id, ownerConversationId)
 
     suspend fun getSearchableConversationCount(): Int =
         chatDao.getSearchableConversationCount()
@@ -726,7 +725,7 @@ class ConversationRepository(
         )
     }
 
-    private suspend fun <T> withSemanticTransaction(
+    internal suspend fun <T> withSemanticTransaction(
         messageIds: Collection<String>? = null,
         updatedAt: Long = System.currentTimeMillis(),
         conversationId: String? = null,
@@ -749,10 +748,10 @@ class ConversationRepository(
     private suspend fun <T> withMaintenanceTransaction(block: suspend () -> T): T =
         database?.withTransaction { block() } ?: block()
 
-    private suspend fun enqueueAttachmentDebt(paths: Collection<String>): Boolean =
+    internal suspend fun enqueueAttachmentDebt(paths: Collection<String>): Boolean =
         enqueueDebt(MaintenanceDebtEntity.KIND_ATTACHMENT_ORPHANS, paths)
 
-    private suspend fun enqueueAttachmentReconcile(): Boolean = enqueueAttachmentDebt(
+    internal suspend fun enqueueAttachmentReconcile(): Boolean = enqueueAttachmentDebt(
         listOf(MaintenanceDebtEntity.RECONCILE_IDENTITY),
     )
 
@@ -767,7 +766,7 @@ class ConversationRepository(
         return scheduled
     }
 
-    private suspend fun enqueueMessageAttachmentDebt(
+    internal suspend fun enqueueMessageAttachmentDebt(
         references: List<MessageAttachmentReference>,
     ): Boolean {
         if (references.any { reference ->

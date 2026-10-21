@@ -1,15 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "./vendor/preact-hooks.mjs";
-import { html, useDialog } from "./html.js";
+import { html, useDialog, runSpring } from "./html.js";
+import "./vendor/panzoom.min.js";
 import { CircularProgress, Spinner } from "./material/progress.js";
 import { sliderStyle } from "./material/slider.js";
 import { t } from "./i18n.js";
 import { icon, ICON_ADD, ICON_ARROW_UPWARD, ICON_EXPAND_ALL, ICON_COLLAPSE_ALL, ICON_MORE_VERT, ICON_STOP, ICON_CHECK, ICON_CLOSE, ICON_ATTACH_FILE, ICON_ARROW_DROP_DOWN } from "./icons.js";
 import { sync } from "./sync.js";
 import { Markdown } from "./markdown.js";
-import { InteractionBar } from "./interaction.js";
+import { ChatToolsRow } from "./tools-row.js";
 import { DetailSheet } from "./detail-sheet.js";
 import { ICON_NEUROLOGY, ICON_MEMORY, ICON_SPEED, ICON_TERMINAL, ICON_LANGUAGE, ICON_COMPRESS, ICON_TUNE, ICON_CHEVRON_DOWN, ICON_GOOGLE, ICON_OPENAI } from "./icons.js";
-import { ICON_IMAGE, ICON_CHEVRON_RIGHT, ICON_CAMERA, ICON_VIDEO, ICON_ERROR, ICON_BROKEN_IMAGE } from "./icons.js";
+import { ICON_IMAGE, ICON_CHEVRON_RIGHT, ICON_VIDEO, ICON_ERROR, ICON_BROKEN_IMAGE } from "./icons.js";
 
 /** The phone's `contextUsagePercent`: whole percent of the window already used, reserve excluded. */
 function contextUsagePercent(estimatedTokens, tokenBudget) {
@@ -49,8 +50,25 @@ export function Composer({ state, MoreMenu, expanded = false, onExpandedChange }
   const inputClip = useRef(null);
   const inputContent = useRef(null);
   const sizeMotion = useRef({ height: null, target: null, animation: null });
-  // A send this bar started, waiting for the ack that lets the expanded bar travel down (see below).
-  const sendInFlight = useRef(false);
+  const outerSpacer = useRef(null);
+  const headerSpacer = useRef(null);
+  const initialExpanded = useRef(expanded);
+  const expandButton = useRef(null);
+  const collapseButton = useRef(null);
+  const expansionMotion = useRef({ expanded, outer: null, spacer: null, buttons: new Map() });
+  // Native keeps the tools overlay anchored to the last measured non-expanded bar.
+  useLayoutEffect(() => {
+    const node = host.current;
+    if (expanded) return;
+    const measure = () => {
+      if (!node.classList.contains("composer-expanded"))
+        node.style.setProperty("--composer-collapsed-height", `${node.getBoundingClientRect().height}px`);
+    };
+    measure();
+    const geometry = new ResizeObserver(measure);
+    geometry.observe(node, { box: "border-box" });
+    return () => geometry.disconnect();
+  }, [expanded]);
   const composing = useRef(false);
   const modelButton = useRef(null);
   const addButton = useRef(null);
@@ -98,7 +116,7 @@ export function Composer({ state, MoreMenu, expanded = false, onExpandedChange }
   const validEditor = editor && state.connected && editor.connectionId === state.connectionId && editor.seq === state.composer?.seq && editor.conversationId === state.openId;
   // ComposerToolsMenuContent: enabled = canCompact && !isCompacting, where canCompact is
   // "a conversation, not loading, not switching, not stopping".
-  const compactAvailable = settingsEditable && !!state.openId && state.openStatus === "ready" &&
+  const compactAvailable = settingsAvailable && !!state.openId && state.openStatus === "ready" &&
     !state.generating && !state.composer.stopping && !!state.composer.compact && !state.composer.compact.compacting;
   function openEditor(kind) {
     setEditor({ ...sync.attachmentTarget(), conversationId: state.openId, kind, initial: kind === "advanced" ? state.composer.advanced : state.composer.compact });
@@ -268,8 +286,7 @@ export function Composer({ state, MoreMenu, expanded = false, onExpandedChange }
     const node = picker.current;
     pickerTarget.current = { target: sync.attachmentTarget(), forced: kind === "videos" ? "video" : kind === "files" ? null : "image" };
     node.accept = kind === "videos" ? "video/*" : kind === "files" ? "*/*" : "image/*";
-    node.multiple = kind !== "camera";
-    if (kind === "camera") node.setAttribute("capture", "environment"); else node.removeAttribute("capture");
+    node.multiple = true;
     node.value = "";
     node.click();
     setAddOpen(false);
@@ -286,26 +303,89 @@ export function Composer({ state, MoreMenu, expanded = false, onExpandedChange }
   function submit() {
     if (actionable) {
       if (stop && !busy) sync.stopGeneration();
-      else { sendInFlight.current = true; sync.submit(); }
+      else sync.submit();
     }
   }
-  // The phone collapses the composer in the same branch that clears the draft once a send is accepted
-  // (RemoteConversation.kt sets `expanded = false` there), which is the travel down the owner sees when
-  // sending from the expanded bar. The ack that closes the send action is that same signal here, so a
-  // send that never landed leaves the bar open with its text intact.
-  useEffect(() => {
-    if (!sendInFlight.current || state.pendingAction) return;
-    sendInFlight.current = false;
-    if (expanded && !state.text) onExpandedChange(false);
-  }, [state.pendingAction]);
-  // The field owns its own height: one line up to six, which is `TextFieldLineLimits.MultiLine(1, 6)`
-  // in ChatComposerLayout.kt, and the full box while expanded (`Modifier.fillMaxHeight()`).
+  useLayoutEffect(() => {
+    const motion = expansionMotion.current;
+    const changed = motion.expanded !== expanded;
+    motion.expanded = expanded;
+    if (changed || (state.display?.reduceMotion && motion.outer)) {
+      motion.outer?.cancel();
+      motion.outer = null;
+      outerSpacer.current.style.height = "0px";
+      if (expanded && !state.display?.reduceMotion) {
+        const animation = outerSpacer.current.animate([{ height: "44px" }, { height: "0px" }],
+          { duration: 400, easing: "cubic-bezier(0.15, 0.5, 0.25, 1)", fill: "both" });
+        motion.outer = animation;
+        animation.onfinish = () => {
+          if (motion.outer !== animation) return;
+          motion.outer = null;
+          animation.cancel();
+        };
+      }
+    }
+    if (changed || (state.display?.reduceMotion && motion.spacer)) {
+      const node = headerSpacer.current;
+      const height = node.getBoundingClientRect().height;
+      const opacity = getComputedStyle(node).opacity;
+      motion.spacer?.cancel();
+      motion.spacer = null;
+      node.style.height = expanded ? "44px" : "0px";
+      node.style.opacity = expanded ? "1" : "0";
+      if (!expanded && height > 0) {
+        const animation = node.animate([
+          { height: state.display?.reduceMotion ? "44px" : `${height}px`, opacity },
+          { height: state.display?.reduceMotion ? "44px" : "0px", opacity: 0 },
+        ], { duration: 250, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "both" });
+        motion.spacer = animation;
+        animation.onfinish = () => {
+          if (motion.spacer !== animation) return;
+          motion.spacer = null;
+          animation.cancel();
+        };
+      }
+    }
+    if (!changed) return;
+    for (const [node, visible] of [[expandButton.current, !expanded], [collapseButton.current, expanded]]) {
+      const opacity = getComputedStyle(node).opacity;
+      motion.buttons.get(node)?.cancel();
+      motion.buttons.delete(node);
+      node.style.opacity = visible ? "1" : "0";
+      node.style.visibility = "visible";
+      if (node === expandButton.current && !visible) { node.style.visibility = "hidden"; continue; }
+      const animation = node.animate([{ opacity }, { opacity: visible ? 1 : 0 }],
+        { duration: 250, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "both" });
+      motion.buttons.set(node, animation);
+      animation.onfinish = () => {
+        if (motion.buttons.get(node) !== animation) return;
+        motion.buttons.delete(node);
+        if (!visible) node.style.visibility = "hidden";
+        animation.cancel();
+      };
+    }
+  }, [expanded, state.display?.reduceMotion]);
+  useLayoutEffect(() => () => {
+    const motion = expansionMotion.current;
+    motion.outer?.cancel();
+    motion.spacer?.cancel();
+    motion.buttons.forEach(animation => animation.cancel());
+  }, []);
+  function changeExpanded(value) {
+    if (expansionMotion.current.outer) return;
+    onExpandedChange(value);
+    field.current?.focus();
+  }
+  // Expanded weight supplies exact constraints; collapsed content owns the size tween.
   function fitField() {
     const node = field.current;
     if (!node) return;
     if (expanded) { node.style.height = ""; return; }
+    const overflowY = node.style.overflowY;
+    node.style.overflowY = "hidden";
     node.style.height = "auto";
     node.style.height = `${Math.min(node.scrollHeight, FIELD_MAX_HEIGHT)}px`;
+    node.style.overflowY = overflowY;
   }
   // Only the input/attachment column owns the 400 ms size transition. Queue and controls are
   // siblings, so their geometry cannot be squeezed by an animated total bar height.
@@ -315,19 +395,14 @@ export function Composer({ state, MoreMenu, expanded = false, onExpandedChange }
     if (!node || !content) return;
     const motion = sizeMotion.current;
     fitField();
-    const hostStyle = getComputedStyle(host.current);
-    const form = host.current.querySelector(".composer");
-    const formStyle = getComputedStyle(form);
-    const chat = host.current.closest(".chat");
-    const expandedHeight = expanded ? Math.max(0, chat.clientHeight -
-      parseFloat(getComputedStyle(chat).getPropertyValue("--chat-top-inset")) -
-      parseFloat(hostStyle.paddingTop) - parseFloat(hostStyle.paddingBottom) -
-      parseFloat(formStyle.paddingTop) - parseFloat(formStyle.paddingBottom) -
-      (queueHost.current?.offsetHeight ?? 0) -
-      form.querySelector(".composer-controls").getBoundingClientRect().height) : null;
-    if (expanded) field.current.style.height = `${Math.max(0, expandedHeight -
-      [...content.children].filter(child => child !== field.current.parentElement)
-        .reduce((height, child) => height + child.getBoundingClientRect().height, 0))}px`;
+    if (expanded) {
+      motion.animation?.cancel();
+      motion.animation = null;
+      node.style.height = "";
+      motion.target = content.getBoundingClientRect().height;
+      motion.height = motion.target;
+      return;
+    }
     const target = content.getBoundingClientRect().height;
     if (motion.target === target && (!state.display?.reduceMotion || !motion.animation)) return;
     const from = motion.animation ? node.getBoundingClientRect().height : motion.height;
@@ -338,7 +413,7 @@ export function Composer({ state, MoreMenu, expanded = false, onExpandedChange }
     node.style.height = `${target}px`;
     if (from == null || Math.abs(from - target) <= 0.5 || state.display?.reduceMotion) return;
     const animation = node.animate([{ height: `${from}px` }, { height: `${target}px` }],
-      { duration: 400, easing: expanded ? "cubic-bezier(0.15, 0.5, 0.25, 1)" : "cubic-bezier(0.4, 0, 0.2, 1)", fill: "both" });
+      { duration: 400, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "both" });
     motion.animation = animation;
     animation.onfinish = () => {
       if (motion.animation !== animation) return;
@@ -354,7 +429,11 @@ export function Composer({ state, MoreMenu, expanded = false, onExpandedChange }
     geometry.observe(inputContent.current);
     geometry.observe(field.current);
     geometry.observe(queueHost.current);
-    return () => geometry.disconnect();
+    geometry.observe(headerSpacer.current);
+    geometry.observe(host.current.closest(".chat"));
+    const refresh = () => travelRef.current();
+    document.fonts.addEventListener("loadingdone", refresh);
+    return () => { geometry.disconnect(); document.fonts.removeEventListener("loadingdone", refresh); };
   }, []);
   useLayoutEffect(() => () => sizeMotion.current.animation?.cancel(), []);
   // The slot takes the clip width so the controls after it follow the visible edge, exactly as the
@@ -458,11 +537,15 @@ export function Composer({ state, MoreMenu, expanded = false, onExpandedChange }
   }, []);
   return html`
     <div class=${`composer-host ${expanded ? "composer-expanded" : ""}`} ref=${host}>
-      <${InteractionBar} state=${state} />
+      <${ChatToolsRow} state=${state} />
+      <div class="composer-expanded-backdrop" aria-hidden="true"></div>
+      <div class="composer-outer-spacer" ref=${outerSpacer} aria-hidden="true"></div>
       <form class="composer" onSubmit=${(event) => {
         event.preventDefault();
         submit();
       }}>
+        <div class="composer-header-spacer" ref=${headerSpacer} aria-hidden="true"
+          style=${{ height: initialExpanded.current ? "44px" : "0px", opacity: initialExpanded.current ? 1 : 0 }}></div>
         <div class="queue-status" ref=${queueHost}>
           ${queueLayers.map(layer => {
             const current = layer.id === queueMotion.current.targetId && queueMotion.current.owner === queueOwner &&
@@ -513,10 +596,11 @@ export function Composer({ state, MoreMenu, expanded = false, onExpandedChange }
               event.preventDefault();
               if (!event.repeat && !stop && !busy) submit();
             }}></textarea>
-          <button class="expand-button" type="button" aria-label=${expanded ? t.collapse : t.expand}
-            aria-expanded=${expanded} onPointerDown=${event => event.preventDefault()}
-            onClick=${() => { onExpandedChange(!expanded); field.current?.focus(); }}>
-            ${icon(expanded ? ICON_COLLAPSE_ALL : ICON_EXPAND_ALL, "0 0 960 960")}
+          <button class="expand-button" ref=${expandButton} type="button" aria-label=${t.expand}
+            aria-expanded="false" inert=${expanded} aria-hidden=${expanded ? "true" : null}
+            style=${{ opacity: initialExpanded.current ? 0 : 1, visibility: initialExpanded.current ? "hidden" : "visible" }}
+            onPointerDown=${event => event.preventDefault()} onClick=${() => changeExpanded(true)}>
+            ${icon(ICON_EXPAND_ALL, "0 0 960 960")}
           </button>
         </div>
         </div>
@@ -561,6 +645,12 @@ export function Composer({ state, MoreMenu, expanded = false, onExpandedChange }
             </span>
           </button>
         </div>
+        <button class="expand-button collapse-button" ref=${collapseButton} type="button" aria-label=${t.collapse}
+          aria-expanded="true" inert=${!expanded} aria-hidden=${expanded ? null : "true"}
+          style=${{ opacity: initialExpanded.current ? 1 : 0, visibility: initialExpanded.current ? "visible" : "hidden" }}
+          onPointerDown=${event => event.preventDefault()} onClick=${() => changeExpanded(false)}>
+          ${icon(ICON_COLLAPSE_ALL, "0 0 960 960")}
+        </button>
       </form>
     </div>
       ${retainedContext && context && html`<${MoreMenu} expanded=${contextOpen && contextReady} reduceMotion=${state.display.reduceMotion}
@@ -599,7 +689,7 @@ export function Composer({ state, MoreMenu, expanded = false, onExpandedChange }
       </${MoreMenu}>`}
       ${retainedAdd && html`<${MoreMenu} expanded=${addOpen} reduceMotion=${state.display.reduceMotion} anchor=${addButton} above
         onClose=${() => setAddOpen(false)} onExited=${restore => { setRetainedAdd(false); if (restore) addButton.current?.focus(); }}>
-        ${[["camera", ICON_CAMERA], ["photos", ICON_IMAGE], ["videos", ICON_VIDEO], ["files", ICON_ATTACH_FILE]].map(([kind, path]) => html`
+        ${[["photos", ICON_IMAGE], ["videos", ICON_VIDEO], ["files", ICON_ATTACH_FILE]].map(([kind, path]) => html`
           <button class="dropdown-item" role="menuitem" type="button" disabled=${!editable} onClick=${() => choose(kind)}>${icon(path)}<span>${t[kind]}</span></button>`)}
       </${MoreMenu}>`}
       ${retainedTools && html`<${MoreMenu} expanded=${toolsOpen} reduceMotion=${state.display.reduceMotion} anchor=${toolsButton} above
@@ -628,7 +718,7 @@ export function Composer({ state, MoreMenu, expanded = false, onExpandedChange }
           <button class="dropdown-item" role="menuitemcheckbox" aria-checked=${controls[key]} data-pending=${capabilityAvailable && !!state.pendingAction} disabled=${!capabilityEnabled} onClick=${() => sync.setting(key, !controls[key])}>
             ${icon(path)}<span class="tool-label">${label}</span><span class="tool-switch" data-checked=${controls[key]}></span></button>`)}
         <button class="dropdown-item" role="menuitem" disabled=${!compactAvailable} onClick=${() => openEditor("compact")}>${icon(ICON_COMPRESS)}<span>${t.compact}</span></button>
-        <button class="dropdown-item" role="menuitem" disabled=${!settingsEditable || !state.composer.advanced} onClick=${() => openEditor("advanced")}>${icon(ICON_TUNE)}<span>${t.advanced}</span></button>
+        <button class="dropdown-item" role="menuitem" disabled=${!settingsAvailable || !state.composer.advanced} onClick=${() => openEditor("advanced")}>${icon(ICON_TUNE)}<span>${t.advanced}</span></button>
       </${MoreMenu}>`}
       ${validPanel && !retainedTools && html`<${DetailSheet} key=${`${toolPanel.connectionId}:${toolPanel.seq}:${toolPanel.kind}`}
         settings title=${toolPanel.kind === "thinking" ? t.thinking : t.serviceTier} display=${state.display} focusReturn=${toolsButton} onClose=${() => setToolPanel(null)}>
@@ -781,30 +871,106 @@ function ConversationEditor({ editor, state, focusReturn, onClose, MoreMenu }) {
 function AttachmentTile({ attachment: a, editable, onPreview }) {
   const source = a.state === "READY" && !a.unavailable && a.storage === "APP_PRIVATE"
     ? a.type === "image" ? sync.attachmentUrl(a.id, "source") : a.type === "video" && a.framePreviewCount ? sync.attachmentUrl(a.id, "frame") : null : null;
+  const decoder = useRef(null);
+  const host = useRef(null);
+  const delay = useRef({ timer: null, source: null });
+  const motion = useRef({ serial: 0, key: null, animations: new Map() });
+  const [layers, setLayers] = useState([{ id: 0, presentation: "initial" }]);
   const [loadedSource, setLoadedSource] = useState(null);
   const [failedSource, setFailedSource] = useState(null);
   const decoded = !!source && loadedSource === source;
   const failed = !!source && failedSource === source;
   const [loading, setLoading] = useState(false);
-  const [initial, setInitial] = useState(true);
-  useLayoutEffect(() => { const frame = requestAnimationFrame(() => setInitial(false)); return () => cancelAnimationFrame(frame); }, []);
-  const busy = a.state === "PROCESSING" || (!!source && !decoded && !failed);
-  useEffect(() => { setLoading(false); if (!busy) return; const timer = setTimeout(() => setLoading(true), 200); return () => clearTimeout(timer); }, [busy]);
   const blocked = a.unavailable || a.storage !== "APP_PRIVATE";
-  const retry = a.state === "FAILED" || failed;
+  const presentation = blocked ? "unavailable" : a.state === "PROCESSING" ? "import-loading"
+    : a.state === "FAILED" ? "import-failed" : a.type === "file" || a.type === "pdf" ? "file"
+    : a.type === "video" && !source ? "video" : failed ? "media-error" : decoded ? "media-success" : "media-loading";
+  const busy = presentation === "import-loading" || presentation === "media-loading";
+  const retry = !blocked && (presentation === "import-failed" || presentation === "media-error");
+  const showLoading = busy && (a.type !== "image" || loading);
+  useLayoutEffect(() => { setLoadedSource(null); setFailedSource(null); }, [source]);
+  useLayoutEffect(() => {
+    const current = delay.current;
+    const replaced = current.source && current.source !== source;
+    current.source = source;
+    if (!busy || a.type !== "image" || replaced) {
+      clearTimeout(current.timer);
+      current.timer = null;
+      setLoading(false);
+    }
+    if (busy && a.type === "image" && (!loading || replaced) && !current.timer) {
+      current.timer = setTimeout(() => { current.timer = null; setLoading(true); }, 200);
+    }
+  });
+  useLayoutEffect(() => {
+    const current = motion.current;
+    const key = JSON.stringify([presentation, showLoading, source, a.name, a.type]);
+    if (current.key === key) return;
+    current.key = key;
+    setLayers(previous => [...previous, { id: ++current.serial, presentation, showLoading,
+      source, name: a.name, type: a.type }]);
+  }, [presentation, showLoading, source, a.name, a.type]);
+  useLayoutEffect(() => {
+    const current = motion.current;
+    for (const node of host.current.querySelectorAll("[data-attachment-layer]")) {
+      const id = Number(node.dataset.attachmentLayer);
+      const visible = id === current.serial;
+      const previous = current.animations.get(node);
+      if (previous?.visible === visible) continue;
+      const opacity = getComputedStyle(node).opacity;
+      previous?.animation.cancel();
+      node.style.opacity = visible ? "1" : "0";
+      const animation = node.animate([{ opacity }, { opacity: visible ? 1 : 0 }],
+        { duration: 200, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "both" });
+      current.animations.set(node, { animation, visible });
+      animation.onfinish = () => {
+        if (current.animations.get(node)?.animation !== animation) return;
+        animation.cancel();
+        if (!visible) {
+          current.animations.delete(node);
+          setLayers(previousLayers => previousLayers.filter(layer => layer.id !== id));
+        }
+      };
+    }
+  }, [layers]);
+  useLayoutEffect(() => () => {
+    clearTimeout(delay.current.timer);
+    motion.current.animations.forEach(({ animation }) => animation.cancel());
+    motion.current.animations.clear();
+  }, []);
   const canPreview = !blocked && a.state === "READY" && (a.type === "file" ? a.text != null : a.type === "pdf" ? a.pagePreviewCount > 0 : !source || decoded);
-  const fileStyle = a.type !== "video" && a.type !== "image";
-  const label = a.type === "pdf" ? "PDF" : (a.name?.includes(".") ? a.name.split(".").at(-1) : a.type).toUpperCase().slice(0, 4);
-  return html`<div class="attachment-tile" data-state=${a.unavailable ? "unavailable" : a.state.toLowerCase()}>
+  return html`<div class="attachment-tile" ref=${host} data-state=${presentation}>
+    ${source && html`<img key=${source} class="attachment-decode" ref=${decoder} src=${source} alt=""
+      onLoad=${event => { if (decoder.current === event.currentTarget && event.currentTarget.isConnected) setLoadedSource(source); }}
+      onError=${event => { if (decoder.current === event.currentTarget && event.currentTarget.isConnected) setFailedSource(source); }} />`}
+    <div class="attachment-layers" aria-hidden="true">
+      ${layers.map(layer => {
+        const importing = layer.presentation === "import-loading";
+        const error = layer.presentation === "import-failed" || layer.presentation === "media-error";
+        const file = importing || error || layer.presentation === "file" || layer.presentation === "unavailable";
+        const label = layer.type === "pdf" ? "PDF" : ((layer.name?.split(".").slice(1).at(-1) || layer.type || "FILE").toUpperCase().slice(0, 4));
+        return html`<div key=${layer.id} class="attachment-layer" data-attachment-layer=${layer.id} data-presentation=${layer.presentation}
+          style=${{ opacity: 0 }}>
+          <div class="attachment-visual">
+            ${file ? layer.type === "video" && layer.presentation !== "unavailable" ? html`<span class="attachment-status">${icon(ICON_VIDEO)}</span>`
+              : html`<span class=${`attachment-status ${layer.type === "pdf" ? "pdf-placeholder" : "file-placeholder"}`}><small>${label}</small></span>`
+              : layer.presentation === "video" ? html`<span class="attachment-status">${icon(ICON_VIDEO)}</span>` : null}
+            ${layer.presentation === "media-success" && html`<img src=${layer.source} alt="" />
+              ${layer.type === "video" && html`<span class="attachment-play">${icon("M8 5v14l11-7z")}</span>`}`}
+            ${(importing || error) && html`<span class=${`attachment-status ${error ? "attachment-error" : "attachment-progress"}`}>
+              ${error ? icon(layer.type === "image" ? ICON_BROKEN_IMAGE : ICON_ERROR) : layer.showLoading ? html`<${Spinner} size=${24} stroke=${3} />` : null}
+            </span>`}
+            ${layer.presentation === "media-loading" && layer.showLoading && html`<span class="attachment-status"><${Spinner} size=${24} stroke=${3} /></span>`}
+          </div>
+          <div class="attachment-caption">
+            ${(layer.presentation === "unavailable" || layer.type === "file" || layer.type === "pdf") && layer.name && html`<span class="attachment-filename">${layer.name}</span>`}
+            ${layer.presentation === "unavailable" && html`<span class="attachment-unavailable">${t.attachmentUnavailable}</span>`}
+          </div>
+        </div>`;
+      })}
+    </div>
     <button class="attachment-preview" type="button" title=${a.name || t.attachments} aria-label=${retry ? t.retry : a.name || t.attachments}
-      disabled=${retry ? !editable : !canPreview} onClick=${() => retry ? sync.attachmentCommand("attachment_retry", a.id) : onPreview()}>
-      ${source && html`<img key=${source} src=${source} alt="" onLoad=${() => setLoadedSource(source)} onError=${() => setFailedSource(source)} style=${{ opacity: decoded ? 1 : 0 }} />`}
-      <span class=${`attachment-status ${fileStyle ? a.type === "pdf" ? "pdf-placeholder" : "file-placeholder" : ""}`} style=${{ opacity: initial || decoded ? 0 : 1 }}>
-        ${fileStyle ? html`<small>${label}</small>` : icon(a.type === "video" ? ICON_VIDEO : ICON_IMAGE)}
-      </span>
-      <span class="attachment-status attachment-progress" style=${{ opacity: !initial && busy && loading ? 1 : 0 }}><${Spinner} size=${24} stroke=${3} /></span>
-      <span class="attachment-status attachment-error" style=${{ opacity: !initial && retry ? 1 : 0 }}>${icon(a.type === "image" ? ICON_BROKEN_IMAGE : ICON_ERROR)}</span>
-    </button>
+      disabled=${retry ? !editable : !canPreview} onClick=${() => retry ? sync.attachmentCommand("attachment_retry", a.id) : onPreview()}></button>
     <button class="attachment-remove" type="button" title=${t.remove} aria-label=${t.remove} disabled=${!editable}
       onClick=${() => sync.attachmentCommand("attachment_remove", a.id)}>${icon(ICON_CLOSE)}</button>
   </div>`;
@@ -859,7 +1025,9 @@ export function AttachmentViewer({ viewer, onNavigate, onClose: onClosed }) {
   const dialog = useRef(null);
   const onClose = useDialog(dialog, onClosed);
   const index = viewer.index || 0;
-  const [scale, setScale] = useState(1);
+  const viewport = useRef(null);
+  const image = useRef(null);
+  const zoom = useRef(null);
   const file = viewer.file;
   const item = viewer.items?.[index];
   const source = item && (item.url ?? sync.attachmentUrl(item.id, item.kind, item.index));
@@ -867,7 +1035,43 @@ export function AttachmentViewer({ viewer, onNavigate, onClose: onClosed }) {
   const [failedSource, setFailedSource] = useState(null);
   const loaded = !!source && loadedSource === source;
   const failed = !!source && failedSource === source;
-  function navigate(next) { setScale(1); onNavigate(next); }
+  useLayoutEffect(() => {
+    const host = viewport.current, node = image.current;
+    if (!host || !node || !loaded) return;
+    const panzoom = globalThis.Panzoom(node, { minScale: 1, maxScale: 10, contain: "outside",
+      canvas: true, panOnlyWhenZoomed: true, pinchAndPan: true, cursor: "grab" });
+    const motion = { scale: 1, cancel: null };
+    zoom.current = { panzoom, motion };
+    const controller = new AbortController();
+    const cancel = () => { motion.cancel?.(); motion.cancel = null; };
+    const wheel = event => { cancel(); panzoom.zoomWithWheel(event); };
+    host.addEventListener("wheel", wheel, { passive: false, signal: controller.signal });
+    node.addEventListener("panzoomstart", cancel, { signal: controller.signal });
+    const resize = new ResizeObserver(() => { cancel(); panzoom.pan(0, 0, { force: true }); });
+    resize.observe(host);
+    return () => {
+      cancel(); controller.abort(); resize.disconnect(); panzoom.destroy(); panzoom.resetStyle();
+      zoom.current = null;
+    };
+  }, [source, loaded]);
+  function toggleZoom(event) {
+    const current = zoom.current;
+    if (!current) return;
+    current.motion.cancel?.();
+    const scale = current.panzoom.getScale();
+    const target = scale <= 1.05 ? 3 : 1;
+    const point = { clientX: event.clientX, clientY: event.clientY };
+    if (dialog.current.closest(".shell")?.dataset.reduceMotion === "true") {
+      current.panzoom.zoomToPoint(target, point); return;
+    }
+    current.motion.scale = scale;
+    current.motion.scaleVelocity = 0;
+    current.motion.cancel = runSpring(current.motion,
+      { scale: { target, stiffness: 400, damping: 1, threshold: .001 } },
+      value => current.panzoom.zoomToPoint(value.scale, point),
+      () => { current.motion.cancel = null; });
+  }
+  function navigate(next) { onNavigate(next); }
   return html`<dialog ref=${dialog} class=${`tool-media-viewer attachment-viewer ${file ? "text-file-viewer" : ""}`} aria-label=${file?.name || item?.name || t.attachments}
     onCancel=${event => { event.preventDefault(); onClose(); }} onKeyDown=${event => {
       event.stopPropagation();
@@ -878,9 +1082,9 @@ export function AttachmentViewer({ viewer, onNavigate, onClose: onClosed }) {
     ${file ? html`<div class="text-file-content">${/\.(md|markdown)$/i.test(file.name || "") ? html`<${Markdown} text=${{ markdown: file.text, math: [] }} />` : html`<pre>${file.text}</pre>`}</div>`
       : item?.type === "video" && item.kind === "source" ? html`<video key=${source} src=${source} controls autoplay
         onLoadedData=${() => setLoadedSource(source)} onError=${() => setFailedSource(source)} style=${{ opacity: loaded ? 1 : 0 }}></video>`
-      : html`<div class="tool-media-scroll" onDblClick=${() => { if (loaded) setScale(scale === 1 ? 3 : 1); }}><img key=${source} class="attachment-full-image" src=${source}
-        alt=${item.name || t.attachments} onLoad=${() => setLoadedSource(source)} onError=${() => setFailedSource(source)}
-        style=${{ width: `${scale * 100}%`, height: `${scale * 100}%`, opacity: loaded ? 1 : 0 }} /></div>`}
+      : html`<div key=${source} class="tool-media-scroll image-viewport" ref=${viewport} onDblClick=${toggleZoom}><img ref=${image} class="attachment-full-image" src=${source}
+        alt=${item.name || t.attachments} draggable="false" onLoad=${() => setLoadedSource(source)} onError=${() => setFailedSource(source)}
+        style=${{ opacity: loaded ? 1 : 0 }} /></div>`}
     ${!file && html`<div class="attachment-viewport-status" style=${{ opacity: !loaded && !failed ? 1 : 0 }}><${Spinner} size=${18} stroke=${3} label=${t.attachments} color="inherit" /></div>
       <div class="attachment-viewport-status" style=${{ opacity: failed ? 1 : 0 }} role=${failed ? "alert" : null}>${icon(item.type === "image" || item.kind === "page" ? ICON_BROKEN_IMAGE : ICON_ERROR)}</div>`}
     <div class="tool-media-controls"><span class="tool-media-count">${file?.name || `${index + 1} / ${viewer.items.length}`}</span>

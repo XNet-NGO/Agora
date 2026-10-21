@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="remote_failed">リモート操作を完了できませんでした。エラーの詳細を確認してください。</string>
-    <string name="remote_unknown">送信結果を確認できません。再送信する前に Codex で会話を確認してください。</string>
+    <string name="remote_unknown">送信結果は不明です。再送信する前に Codex を確認してください。「送信を許可」は警告を解除するだけで、メッセージは送信しません。</string>
     <string name="remote_rejected">Codex がメッセージを受け付けませんでした。再試行する前にエラーの詳細を確認してください。</string>
     <string name="remote_storage_failed">Agora がリモート用のローカルデータにアクセスできません。空き容量を確認してください。</string>
     <string name="remote_network_failed">Filo に接続できません。接続先のパソコン、サービスのアドレス、ネットワークを確認してください。</string>

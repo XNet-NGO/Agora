@@ -44,6 +44,7 @@ internal data class StandardGenerationContinuationLaunch(
     val job: Job,
     val modelMessageId: String,
     val started: Deferred<Boolean>,
+    val uiToken: Long,
 )
 
 /**
@@ -91,6 +92,7 @@ internal class StandardGenerationContinuationLauncher(
                 }
 
             try {
+                if (!state.acquireGenerationAdmission(uiToken, executionCoordinator)) return@generation
                 val persistId = state.nextPersistId()
                 val launchAtBoundary: suspend () -> Unit = boundary@{
                     if (!state.isCurrentToken(uiToken)) return@boundary
@@ -249,6 +251,7 @@ internal class StandardGenerationContinuationLauncher(
             job = generationJob,
             modelMessageId = modelMessageId,
             started = started,
+            uiToken = uiToken,
         )
     }
 }

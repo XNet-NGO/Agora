@@ -45,6 +45,8 @@ class ChatRuntime(
     skillManager: SkillManager,
     sandboxFactory: SandboxManagerFactory?,
     automationToolProvider: AutomationToolProvider,
+    subagentToolProvider: com.newoether.agora.tool.SubagentToolProvider,
+    subagentManager: com.newoether.agora.automation.SubagentManager,
     mcpToolProvider: McpToolProvider,
     askUser: AskUserController,
     manualIndexer: com.newoether.agora.data.ManualIndexer,
@@ -58,6 +60,8 @@ class ChatRuntime(
     taskExecutionEngine: TaskExecutionEngine,
     scope: CoroutineScope,
 ) {
+    internal val onConversationOpened: (String) -> Unit = subagentManager::conversationOpened
+
     // replay=0: events raised while no client is collecting are dropped rather than replayed
     // stale to the next client. The 1-slot buffer keeps tryEmit lossless for slow collectors.
     private val _snackbarEvents = MutableSharedFlow<SnackbarEvent>(
@@ -90,12 +94,16 @@ class ChatRuntime(
             sandboxFactory = sandboxFactory,
             additionalToolProviders = listOf(
                 automationToolProvider,
+                subagentToolProvider,
                 mcpToolProvider,
                 AskUserToolProvider(askUser),
                 com.newoether.agora.tool.IntrospectToolProvider(manualIndexer),
                 com.newoether.agora.tool.SearchDocumentsToolProvider(userDocumentManager),
             ),
             customProviders = { settings.customProviders.value },
+            generatingConversationIds = {
+                registry.activeConversationIds.value + executionCoordinator.activeAutomationConversationIds.value
+            },
         ).also { gm ->
             // Gate lives in RagManager.indexMessageForRag (autoCacheEnabled + active model).
             gm.onMessagePersisted = { messageId, text -> ragManager.indexMessageForRag(messageId, text) }
@@ -113,6 +121,14 @@ class ChatRuntime(
         ragManager = ragManager,
         appContext = appContext,
     )
+
+    private val subagentMessageQueue = SubagentMessageQueue(
+        conversations, registry,
+        prepareSnapshot = { id, run, model -> requestBuilder.captureAdmissionSnapshot(id, run, model) },
+    )
+
+    internal suspend fun enqueueSubagentMessage(id: String, text: String, context: GenerationContext): String =
+        subagentMessageQueue.enqueue(id, text, context)
 
     internal val messageGeneration: MessageGenerationController by lazy {
         MessageGenerationController(
@@ -153,7 +169,7 @@ class ChatRuntime(
             executionCoordinator.tryWithConversationLock(conversationId) { block() }
         },
         removeRuntime = registry::remove,
-        stopGeneration = { conversationId, origin -> generationStop.stop(conversationId, origin) },
+        stopGeneration = { conversationId, origin -> generationStop.stopAndAwait(conversationId, origin) },
         deletedElsewhereText = { appContext.getString(R.string.conversation_deleted_elsewhere) },
     )
 
@@ -194,6 +210,7 @@ class ChatRuntime(
             }
             state.onIdle = { conversationId ->
                 clients.generationActivityChanged(conversationId, active = false)
+                subagentManager.conversationIdle(conversationId)
             }
             state.onStreamCommit = clients::commitTerminalStreamingMessage
             state.onQueueDrainRequested = { settledState ->

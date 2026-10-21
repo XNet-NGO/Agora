@@ -77,6 +77,7 @@ class ConversationCompactControllerTest {
                 job = completedJob,
                 modelMessageId = "compact_message",
                 started = CompletableDeferred(true),
+                uiToken = 1L,
             )
 
         val started = controller(
@@ -175,6 +176,7 @@ class ConversationCompactControllerTest {
                 job = Job().apply { complete() },
                 modelMessageId = requireNotNull(request.modelMessageId),
                 started = CompletableDeferred(true),
+                uiToken = 1L,
             )
         }
         coEvery { conversations.getMessage(any()) } answers {
@@ -281,6 +283,7 @@ class ConversationCompactControllerTest {
                 job = Job().apply { complete() },
                 modelMessageId = target.id,
                 started = CompletableDeferred(true),
+                uiToken = 1L,
             )
 
         val result = controller(
@@ -337,6 +340,7 @@ class ConversationCompactControllerTest {
             job = Job().apply { complete() },
             modelMessageId = "compact_message",
             started = CompletableDeferred(true),
+            uiToken = 1L,
         )
 
         val started = controller(
@@ -508,6 +512,7 @@ class ConversationCompactControllerTest {
                 job = Job().apply { complete() },
                 modelMessageId = messageId,
                 started = CompletableDeferred(true),
+                uiToken = 1L,
             )
         }
 

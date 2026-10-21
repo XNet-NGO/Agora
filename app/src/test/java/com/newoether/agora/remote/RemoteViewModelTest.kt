@@ -98,6 +98,9 @@ internal class RemoteViewModelTest : RemoteViewModelFixture() {
         coVerify(exactly = 1) { client.send(any(), any(), any(), any()) }
         vm.acknowledgeUnknown(owner)
         assertNull(vm.state.value.attempts[owner])
+        runCurrent()
+        coVerify(exactly = 1) { client.send(any(), any(), any(), any()) }
+        assertEquals("hello", vm.state.value.drafts[owner])
         vm.setVisible(false)
     }
 
@@ -149,7 +152,7 @@ internal class RemoteViewModelTest : RemoteViewModelFixture() {
         assertNull(vm.animatedScrollRequest.value)
         val clientId = vm.state.value.attempts[owner]!!.clientId
         coEvery { client.conversation(any(), any()) } returns bodyPage(
-            listOf(RemoteMessage("sent", "new-turn", clientId, "user", "hello", 2)), null, emptyList())
+            listOf(RemoteMessage("sent", "turn", clientId, "user", "hello", 2)), null, emptyList())
         vm.refresh(); vm.state.first { it.attempts[owner]?.delivery == RemoteDelivery.DELIVERED }
         assertEquals(RemoteDelivery.DELIVERED, vm.state.value.attempts[owner]?.delivery)
         assertNull(vm.state.value.drafts[owner])
@@ -168,7 +171,7 @@ internal class RemoteViewModelTest : RemoteViewModelFixture() {
         assertNull(vm.animatedScrollRequest.value)
         val nextId = vm.state.value.attempts[owner]!!.clientId
         coEvery { client.conversation(any(), any()) } returns bodyPage(
-            listOf(RemoteMessage("next", "next-turn", nextId, "user", "next", 3)), null, emptyList())
+            listOf(RemoteMessage("next", "second-turn", nextId, "user", "next", 3)), null, emptyList())
         vm.refresh(); runCurrent()
         assertNotNull(vm.animatedScrollRequest.value)
         vm.selectSession(session.copy(id = "other"))
@@ -293,7 +296,7 @@ internal class RemoteViewModelTest : RemoteViewModelFixture() {
         vm.setVisible(false)
     }
 
-    @Test fun disconnectWhileAwaitingNativeStopClearsBusyAndInvalidatesControls() = runTest(dispatcher) {
+    @Test fun disconnectWhileAwaitingNativeStopKeepsBusyUntilExactTurnEvidenceReturns() = runTest(dispatcher) {
         val disconnect = CompletableDeferred<Unit>()
         every { client.events(any()) } returns flow {
             emit(bodyPage(emptyList(), null, emptyList(), RemoteRuntime("active", "turn")))
@@ -306,8 +309,15 @@ internal class RemoteViewModelTest : RemoteViewModelFixture() {
         vm.stop(); runCurrent()
         assertTrue(vm.state.value.isStopping)
         disconnect.complete(Unit); runCurrent()
-        assertFalse(vm.state.value.isStopping)
+        assertTrue(vm.state.value.isStopping)
+        assertEquals("turn", vm.state.value.stoppingTurnId)
         assertNull(vm.state.value.runtime)
+        every { client.events(any()) } returns flow {
+            emit(bodyPage(emptyList(), null, emptyList(), RemoteRuntime("idle", completedTurnId = "turn")))
+            awaitCancellation()
+        }
+        vm.refresh(); runCurrent()
+        assertFalse(vm.state.value.isStopping)
         vm.stop(); vm.send(); runCurrent()
         coVerify(exactly = 1) { client.stop("session", "turn") }
         coVerify(exactly = 0) { client.send(any(), any(), any(), any()) }
@@ -488,7 +498,7 @@ internal class RemoteViewModelTest : RemoteViewModelFixture() {
         vm.setVisible(false)
     }
 
-    @Test fun failedModelCatalogEndsLoadingWithoutBlockingDraftSend() = runTest(dispatcher) {
+    @Test fun failedModelCatalogRequiresExplicitRetryBeforeAnyCreation() = runTest(dispatcher) {
         val catalog = CompletableDeferred<List<RemoteModel>>()
         coEvery { client.models() } coAnswers { catalog.await() }
         coEvery { client.create(any(), any(), any(), any()) } returns RemoteSession("native", "New", "/host/default", 1)
@@ -501,8 +511,14 @@ internal class RemoteViewModelTest : RemoteViewModelFixture() {
         assertNull(vm.state.value.selectedModel)
         val owner = vm.state.value.owner!!
         vm.editDraft(owner, "hello"); vm.send(); runCurrent()
-        coVerify(exactly = 1) { client.create("hello", any(), emptyList(), null) }
+        coVerify(exactly = 0) { client.create(any(), any(), any(), any()) }
         coVerify(exactly = 0) { client.send(any(), any(), any(), any()) }
+        assertTrue(vm.state.value.attempts.isEmpty())
+        assertEquals("hello", vm.state.value.drafts[owner])
+        coEvery { client.models() } returns listOf(RemoteModel("model", "Model", true))
+        vm.refreshModels(); runCurrent()
+        vm.send(); runCurrent()
+        coVerify(exactly = 1) { client.create("hello", any(), emptyList(), RemoteSettings(model = "model")) }
         assertEquals(owner, vm.state.value.owner)
         vm.setVisible(false)
     }

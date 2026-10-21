@@ -46,7 +46,12 @@ class RemoteErrorPresentationTest {
 
     @Test fun uncertainDeliveryNeverOffersABlindSendRetry() {
         val notice = RemoteNotice("send_failed", RemoteFailure.SERVICE, 1, code = "delivery_unconfirmed")
-        assertTrue(remoteNoticeMessage(context("en"), notice).contains("before sending again"))
+        val english = remoteNoticeMessage(context("en"), notice)
+        assertTrue(english.contains("before sending again"))
+        assertTrue(english.contains("does not send"))
+        assertEquals("Allow Sending", context("en").getString(com.newoether.agora.R.string.remote_check))
+        assertTrue(remoteNoticeMessage(context("zh-CN"), notice).contains("不会发送消息"))
+        assertEquals("允许发送", context("zh-CN").getString(com.newoether.agora.R.string.remote_check))
         assertFalse(notice.canRetryRead)
     }
 }

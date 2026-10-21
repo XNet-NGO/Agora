@@ -5,6 +5,7 @@ import com.newoether.agora.api.StreamEvent
 import com.newoether.agora.data.CustomEndpointProtocol
 import com.newoether.agora.data.CustomProviderConfig
 import com.newoether.agora.data.local.ChatEntity
+import com.newoether.agora.data.local.ChatDao
 import com.newoether.agora.data.local.MessageEntity
 import com.newoether.agora.data.local.MessageContextTopology
 import com.newoether.agora.data.repository.ConversationRepository
@@ -34,7 +35,8 @@ class ConversationTitleGeneratorTest {
             anthropicCacheEnabled = false, anthropicCacheTtl = "5m",
         )
         val settings = mockk<SettingsRepository>(relaxed = true)
-        val conversations = mockk<ConversationRepository>(relaxed = true)
+        val dao = mockk<ChatDao>(relaxed = true)
+        val conversations = ConversationRepository(dao, database = null)
         val registry = mockk<ProviderRegistry>(relaxed = true)
         val provider = mockk<LlmProvider>()
         val captured = mutableListOf<ProviderConfig>()
@@ -43,16 +45,16 @@ class ConversationTitleGeneratorTest {
             participant = Participant.USER, status = MessageStatus.SUCCESS,
             timestamp = 1L, runId = "run", runSequence = 0L,
         )
-        coEvery { conversations.getConversation("conversation") } returns ChatEntity("conversation", "Old")
-        coEvery { conversations.getMessageTopologySnapshot("conversation") } returns listOf(
+        coEvery { dao.getConversation("conversation") } returns ChatEntity("conversation", "Old")
+        coEvery { dao.getMessageContextTopology("conversation") } returns listOf(
             MessageContextTopology(
                 user.id, user.conversationId, null, user.status, user.participant,
                 user.timestamp, modelName = null, runId = user.runId,
                 runSequence = user.runSequence, consumedAtPass = null,
             ),
         )
-        coEvery { conversations.getMessage("user") } returns user
-        coEvery { conversations.updateConversationTitleIfUnchanged(any(), any(), any()) } returns true
+        coEvery { dao.getMessage("user") } returns user
+        coEvery { dao.updateConversationTitleIfUnchanged(any(), any(), any(), any()) } returns 1
         every { settings.titleGenerationPrompt } returns MutableStateFlow("Title prompt")
         every { settings.anthropicCacheEnabled } returns MutableStateFlow(true)
         every { settings.anthropicCacheTtl } returns MutableStateFlow("1h")

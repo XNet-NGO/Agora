@@ -481,9 +481,14 @@ class WebUiServerTest {
                         header(HttpHeaders.Range, "bytes=0-")
                     } }
                 }
-                kotlinx.coroutines.withTimeout(5000) { entered.await() }
-                auth.logout(token)
-                kotlinx.coroutines.withTimeout(5000) { settled.await(); request.await() }
+                try {
+                    kotlinx.coroutines.withTimeout(5000) { entered.await() }
+                    auth.logout(token)
+                    kotlinx.coroutines.withTimeout(5000) { settled.await() }
+                    kotlinx.coroutines.withTimeout(5000) { request.await() }
+                } finally {
+                    request.cancelAndJoin()
+                }
             }
         }
     }

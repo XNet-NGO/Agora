@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="remote_failed">L’action distante n’a pas pu être effectuée. Consultez les détails de l’erreur.</string>
-    <string name="remote_unknown">L’envoi n’est pas confirmé. Vérifiez la conversation dans Codex avant de renvoyer.</string>
+    <string name="remote_unknown">Envoi non confirmé. Vérifiez Codex avant de renvoyer. « Autoriser l’envoi » retire seulement cet avertissement, sans envoyer de message.</string>
     <string name="remote_rejected">Codex n’a pas accepté le message. Consultez l’erreur avant de réessayer.</string>
     <string name="remote_storage_failed">Agora ne peut pas accéder aux données distantes locales. Vérifiez l’espace disponible.</string>
     <string name="remote_network_failed">Filo est inaccessible. Vérifiez l’ordinateur cible, l’adresse du service et le réseau.</string>

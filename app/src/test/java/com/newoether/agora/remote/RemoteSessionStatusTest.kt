@@ -140,6 +140,72 @@ class RemoteSessionStatusTest {
         assertTrue(vm.state.value.error); assertEquals(listOf(session), vm.state.value.sessions)
         assertFalse(vm.state.value.loadingMore); vm.setVisible(false)
     }
+    @Test fun retiredCatalogStatusSettlesOnlyTheExactActiveTurnAndKeepsCompletionUnread() = runTest(dispatcher) {
+        val vm = open(); vm.observeSessions(address, listOf("session")); runCurrent()
+        val confirmed = vm.state.value.sessionStatuses["$address/session"]
+        for (unavailable in listOf(
+            RemoteSessionStatus("session", "notLoaded"),
+            RemoteSessionStatus("session", "notLoaded", completedTurnId = "older"),
+            RemoteSessionStatus("session", "systemError"),
+        )) {
+            status = unavailable
+            advanceTimeBy(3000); runCurrent()
+            assertEquals(confirmed, vm.state.value.sessionStatuses["$address/session"])
+        }
+        status = RemoteSessionStatus("session", "notLoaded", completedTurnId = "turn")
+        advanceTimeBy(3000); runCurrent()
+        val settled = vm.state.value.sessionStatuses["$address/session"]!!
+        assertEquals("idle", settled.status)
+        assertNull(settled.activeTurnId)
+        assertEquals("turn", settled.completedTurnId)
+        assertTrue(vm.state.value.hasUnreadGeneration("session"))
+        advanceTimeBy(3000); runCurrent()
+        assertEquals(settled, vm.state.value.sessionStatuses["$address/session"])
+        coVerify(exactly = 0) { store.markViewed(any(), any(), any()) }
+        vm.setVisible(false)
+    }
+
+    @Test fun confirmedIdleFromTheCatalogReplacesAnOlderCachedActiveTurn() = runTest(dispatcher) {
+        val vm = open(); vm.observeSessions(address, listOf("session")); runCurrent()
+        status = RemoteSessionStatus("session", "idle", completedTurnId = "later-turn", hasUnreadTurn = true)
+        advanceTimeBy(3000); runCurrent()
+        assertEquals(status, vm.state.value.sessionStatuses["$address/session"])
+        assertTrue(vm.state.value.hasUnreadGeneration("session"))
+        vm.setVisible(false)
+    }
+
+    @Test fun retiredChatSnapshotSettlesCachedActivityAndMarksOnlyItsCompletionViewed() = runTest(dispatcher) {
+        val events = kotlinx.coroutines.flow.MutableSharedFlow<RemoteConversationPage>()
+        every { client.events(any()) } returns events
+        val vm = open(); vm.selectSession(session); runCurrent()
+        events.emit(bodyPage(emptyList(), null, emptyList(), RemoteRuntime("notLoaded"))); runCurrent()
+        assertEquals("active", vm.state.value.sessionStatuses["$address/session"]?.status)
+        coVerify(exactly = 0) { store.markViewed(any(), any(), any()) }
+        val terminal = bodyPage(emptyList(), null, emptyList(), RemoteRuntime("notLoaded", completedTurnId = "turn"))
+        events.emit(terminal); runCurrent()
+        assertEquals("notLoaded", vm.state.value.runtime?.status)
+        assertEquals("idle", vm.state.value.sessionStatuses["$address/session"]?.status)
+        assertNull(vm.state.value.sessionStatuses["$address/session"]?.activeTurnId)
+        assertEquals("turn", vm.state.value.sessionStatuses["$address/session"]?.completedTurnId)
+        assertFalse(vm.state.value.hasUnreadGeneration("session"))
+        events.emit(terminal); runCurrent()
+        coVerify(exactly = 1) { store.markViewed(address, "session", "turn") }
+        status = RemoteSessionStatus("session")
+        vm.selectSession(null); runCurrent()
+        assertEquals("idle", vm.state.value.sessionStatuses["$address/session"]?.status)
+        vm.setVisible(false)
+    }
+
+    @Test fun anActiveReplacementTurnWinsOverTheCompletionOfItsPredecessor() {
+        val old = RemoteSessionStatus("session", "active", activeTurnId = "turn")
+        val incoming = RemoteSessionStatus("session", "active", activeTurnId = "next", completedTurnId = "turn")
+        val resolved = reconcileRemoteSessionStatus(old, incoming)
+        assertEquals("active", resolved.status)
+        assertEquals("next", resolved.activeTurnId)
+        assertEquals("turn", resolved.completedTurnId)
+        assertTrue(resolved.hasUnreadTurn)
+    }
+
     @Test fun unknownAndFailedReadsKeepCachedStatusAndNavigationDoesNotEraseIt() = runTest(dispatcher) {
         val vm = open(); vm.observeSessions(address, listOf("session")); runCurrent()
         status = RemoteSessionStatus("session")

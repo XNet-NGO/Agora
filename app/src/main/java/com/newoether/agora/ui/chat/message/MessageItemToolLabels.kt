@@ -3,6 +3,11 @@ package com.newoether.agora.ui.chat.message
 import android.content.res.Resources
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import com.newoether.agora.R
@@ -51,13 +56,14 @@ internal fun Resources.toolDisplayName(segment: MessageSegment): String {
         ) ?: "MCP"
     }
     // A malformed-call stand-in keeps the tool the model actually named. Label the card with that
-    // name and leave the kind UNKNOWN, so the summary stays the plain failure reason instead of
-    // inventing a shape for a call that never ran.
+    // name using the same localized title, while the resolver keeps UNKNOWN so the summary stays
+    // the plain failure reason instead of inventing a shape for a call that never ran.
     val sentName = ToolPresentationResolver
         .malformedCallOriginals(toolName, segment.toolArgs)
         ?.name
     return toolBaseDisplayName(
-        kind = kind,
+        kind = sentName?.let(ToolPresentationResolver::kindForToolName)
+            ?.takeUnless { it == ToolKind.MCP } ?: kind,
         toolName = sentName?.takeIf { it.isNotBlank() } ?: toolName,
     )
 }
@@ -92,6 +98,13 @@ internal fun mcpToolDisplayName(
         }
         ?.replace(TOOL_PATH_INITIAL) { it.value.uppercase() }
         ?.takeIf(String::isNotBlank)
+}
+
+internal fun toolHeaderIcon(kind: ToolKind): ImageVector = when (kind) {
+    ToolKind.TODO_READ, ToolKind.TODO_UPDATE -> Icons.Default.Checklist
+    ToolKind.SUBAGENT_SPAWN, ToolKind.SUBAGENT_SEND, ToolKind.SUBAGENT_WAIT,
+    ToolKind.SUBAGENT_LIST, ToolKind.SUBAGENT_STOP -> Icons.Default.AccountTree
+    else -> Icons.Default.Build
 }
 
 internal fun fallbackToolDisplayName(toolName: String): String =
@@ -145,6 +158,13 @@ private fun Resources.toolBaseDisplayName(
     ToolKind.LOOP_START -> getString(R.string.tool_start_loop)
     ToolKind.LOOP_STOP -> getString(R.string.tool_stop_loop)
     ToolKind.ASK_USER -> getString(R.string.tool_ask_user)
+    ToolKind.TODO_READ -> getString(R.string.tool_read_todo)
+    ToolKind.TODO_UPDATE -> getString(R.string.tool_update_todo)
+    ToolKind.SUBAGENT_SPAWN -> getString(R.string.tool_spawn_agent)
+    ToolKind.SUBAGENT_SEND -> getString(R.string.tool_send_agent_message)
+    ToolKind.SUBAGENT_WAIT -> getString(R.string.tool_wait_agents)
+    ToolKind.SUBAGENT_LIST -> getString(R.string.tool_list_agents)
+    ToolKind.SUBAGENT_STOP -> getString(R.string.tool_stop_agent)
     ToolKind.MCP -> "MCP"
     ToolKind.UNKNOWN -> if (toolName == "code_execution") {
         getString(R.string.code_execution)
@@ -321,6 +341,13 @@ private fun Resources.runningSummary(
     ToolKind.LOOP_START -> getString(R.string.tool_progress_starting)
     ToolKind.LOOP_STOP -> getString(R.string.tool_progress_stopping)
     ToolKind.ASK_USER -> getString(R.string.tool_waiting_for_answers)
+    ToolKind.TODO_READ -> getString(R.string.tool_reading_todo)
+    ToolKind.TODO_UPDATE -> getString(R.string.tool_updating_todo)
+    ToolKind.SUBAGENT_SPAWN -> getString(R.string.tool_spawning_agent)
+    ToolKind.SUBAGENT_SEND -> getString(R.string.tool_sending_agent_message)
+    ToolKind.SUBAGENT_WAIT -> getString(R.string.tool_waiting_agents)
+    ToolKind.SUBAGENT_LIST -> getString(R.string.tool_listing_agents)
+    ToolKind.SUBAGENT_STOP -> getString(R.string.tool_stopping_agent)
     ToolKind.MCP,
     ToolKind.UNKNOWN -> getString(R.string.tool_calling_ellipsis)
 }
@@ -419,7 +446,8 @@ private fun Resources.optionalSubjectSummary(
 
 internal fun Resources.stoppedToolSummary(presentation: ToolPresentation): String =
     getString(if (presentation.jobState == "interrupted") R.string.tool_interrupted
-        else if (presentation.kind == ToolKind.SHELL_EXECUTE) R.string.tool_state_stopped
+        else if (presentation.kind in setOf(ToolKind.SHELL_EXECUTE, ToolKind.SHELL_JOB_GET,
+            ToolKind.SHELL_JOB_WAIT, ToolKind.SHELL_JOB_STOP)) R.string.tool_state_stopped
         else R.string.tool_execution_stopped)
 
 private fun Resources.editActionSummary(presentation: ToolPresentation, subject: String?, active: Boolean): String? =
@@ -486,6 +514,9 @@ private fun Resources.emptySummary(
     ToolKind.FILE_GLOB -> getString(R.string.tool_found_no_files)
     ToolKind.FILE_GREP -> getString(R.string.tool_found_no_matches)
     ToolKind.TASK_LIST -> getString(R.string.tool_no_tasks)
+    ToolKind.TODO_READ -> getString(R.string.tool_todo_empty)
+    ToolKind.SUBAGENT_LIST -> getString(R.string.tool_agents_empty)
+    ToolKind.SUBAGENT_WAIT -> getString(R.string.tool_agent_results_empty)
     else -> completedSummary(presentation, subject)
 }
 
@@ -644,6 +675,13 @@ private fun Resources.completedSummary(
     ToolKind.LOOP_STOP -> getString(if (presentation.outcome == "already_stopped")
         R.string.tool_loop_already_stopped else R.string.tool_stopped_loop)
     ToolKind.ASK_USER -> questionOutcomeSummary(presentation)
+    ToolKind.TODO_READ -> getString(R.string.tool_read_todo_done)
+    ToolKind.TODO_UPDATE -> getString(R.string.tool_updated_todo)
+    ToolKind.SUBAGENT_SPAWN -> getString(R.string.tool_spawned_agent)
+    ToolKind.SUBAGENT_SEND -> getString(R.string.tool_queued_agent_message)
+    ToolKind.SUBAGENT_WAIT -> getString(R.string.tool_waited_agents)
+    ToolKind.SUBAGENT_LIST -> getString(R.string.tool_listed_agents)
+    ToolKind.SUBAGENT_STOP -> getString(R.string.tool_stopped_agent)
     ToolKind.MCP,
     ToolKind.UNKNOWN -> getString(R.string.tool_done)
 }
@@ -693,6 +731,11 @@ private fun Resources.failedSummary(
         ToolKind.LOOP_START -> getString(R.string.tool_loop_start_failed)
         ToolKind.LOOP_STOP -> getString(R.string.tool_loop_stop_failed)
         ToolKind.ASK_USER -> getString(R.string.tool_ask_user_failed)
+        ToolKind.TODO_READ -> getString(R.string.tool_read_failed_default)
+        ToolKind.TODO_UPDATE -> getString(R.string.tool_update_failed_default)
+        ToolKind.SUBAGENT_SPAWN -> getString(R.string.tool_create_failed_default)
+        ToolKind.SUBAGENT_LIST -> getString(R.string.tool_list_failed_default)
+        ToolKind.SUBAGENT_SEND, ToolKind.SUBAGENT_WAIT, ToolKind.SUBAGENT_STOP,
         ToolKind.MCP, ToolKind.UNKNOWN -> reason ?: getString(R.string.tool_call_failed)
     }
 }

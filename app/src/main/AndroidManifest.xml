@@ -19,6 +19,10 @@
     <!-- Optional: capture goes through the platform IMAGE_CAPTURE intent, so the
          camera feature must not exclude hardware-less devices (e.g. Chromebooks). -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- On-device speech-to-text (sherpa-onnx). Mic is optional hardware; voice input is
+         a user-granted, opt-in capability gated on the model being installed. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <!-- Optional user-granted access; exact automation remains off by default. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- Saving images to the gallery on pre-Q only; Q+ uses scoped MediaStore (no permission). -->

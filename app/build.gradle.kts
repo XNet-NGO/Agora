@@ -145,10 +145,16 @@ android {
             useLegacyPackaging = true
             // We vendor a matched, self-built ONNX Runtime (libonnxruntime.so +
             // libonnxruntime4j_jni.so, ORT 1.28.2, NDK r28c, arm64-v8a) under
-            // src/main/jniLibs. It is version-matched to sherpa-onnx's bundled core so a
-            // future STT dependency shares ONE libonnxruntime.so in-process. pickFirst keeps
-            // that single native lib if another dependency also ships it.
+            // src/main/jniLibs. sherpa-onnx's AAR bundles its own libonnxruntime.so (also
+            // 1.28.2), so STT, the ORT Java API, and onnxruntime-genai share ONE
+            // libonnxruntime.so in-process. pickFirst keeps that single native lib.
             pickFirsts += "**/libonnxruntime.so"
+            // sherpa-onnx ships arm64-v8a/armeabi-v7a/x86 JNI, but our vendored ONNX Runtime is
+            // arm64-v8a only. Drop sherpa's non-arm64 JNI so a non-arm64 build can't load a
+            // sherpa lib with no matching libonnxruntime.so (STT is arm64-only by design).
+            excludes += "lib/x86/libsherpa-onnx*.so"
+            excludes += "lib/x86_64/libsherpa-onnx*.so"
+            excludes += "lib/armeabi-v7a/libsherpa-onnx*.so"
         }
         resources {
             // bcprov, bcutil and bcpkix each ship the same BouncyCastle (MIT) license text.
@@ -277,6 +283,12 @@ dependencies {
     // (libonnxruntime-genai*.so, libmat.so) are in jniLibs and dlopen the vendored ORT 1.28.2
     // via OrtGetApiBase (stable C ABI) — no second libonnxruntime.so.
     implementation(files("libs/onnxruntime-genai-0.17.0.jar"))
+    // On-device streaming STT (sherpa-onnx, JitPack AAR). Its arm64-v8a AAR bundles its own
+    // libonnxruntime.so — verified ORT 1.28.2, identical to our vendored core — plus
+    // libsherpa-onnx-jni/c-api/cxx-api.so. libsherpa-onnx-jni.so dynamically NEEDs
+    // libonnxruntime.so, so the pickFirst in packaging.jniLibs keeps a single compatible
+    // 1.28.2 shared by sherpa's JNI, the ORT Java API, and onnxruntime-genai.
+    implementation(libs.sherpa.onnx)
     // WebUI server (stage 2): embedded HTTP with the pure-Kotlin CIO engine.
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.cio)

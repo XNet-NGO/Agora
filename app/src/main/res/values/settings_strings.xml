@@ -503,9 +503,26 @@
     <string name="settings_interaction">Interaction</string>
     <string name="settings_interaction_desc">Questions the assistant asks you</string>
     <string name="ask_user_enable">Let the assistant ask me</string>
+    <string name="ask_user_timeout">Timeout</string>
+    <string name="ask_user_timeout_desc">How long to wait for a blocking question set. Unanswered questions are skipped when time runs out.</string>
+    <string name="ask_user_timeout_minutes">%1$d min</string>
     <string name="ask_user_enable_desc">Gives the model a tool to ask you a question and wait for your choice</string>
     <string name="unsaved_changes_title">Unsaved changes</string>
     <string name="unsaved_changes_message">You have unsaved changes. Discard them?</string>
     <string name="unsaved_changes_discard">Discard</string>
     <string name="unsaved_changes_keep_editing">Keep editing</string>
+
+    <!-- Assistant (Layer 1) -->
+    <string name="settings_assistant">Assistant</string>
+    <string name="settings_assistant_desc">Make Agora your device assistant</string>
+    <string name="assistant_intro">Set Agora as your default digital assistant. When enabled, the assist gesture or power-button handoff brings Agora forward and lets it read the current screen to help. All access is granted by you; Agora never injects input into other apps.</string>
+    <string name="assistant_role_group">Default assistant</string>
+    <string name="assistant_role_title">Set Agora as assistant</string>
+    <string name="assistant_role_request">Tap to make Agora your device assistant</string>
+    <string name="assistant_role_held">Agora is your default assistant</string>
+    <string name="assistant_role_unavailable">The assistant role is not available on this device</string>
+    <string name="assistant_overlay_group">Floating button</string>
+    <string name="assistant_overlay_title">Show floating assistant button</string>
+    <string name="assistant_overlay_desc">A draggable button to invoke Agora from any app</string>
+    <string name="assistant_overlay_needs_permission">Needs permission to draw over other apps</string>
 </resources>

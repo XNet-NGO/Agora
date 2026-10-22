@@ -378,6 +378,7 @@ internal fun SettingsDestination(
         "imagegen" -> SettingsImageGenPage(viewModel, onBack)
         "shell" -> SettingsShellPage(viewModel, onBack)
         "interaction" -> SettingsInteractionPage(viewModel, onBack)
+        "assistant" -> SettingsAssistantPage(onBack)
         "todo" -> SettingsTodoPage(viewModel, onBack)
         "subagents" -> SettingsSubagentPage(viewModel, onBack)
         "mcp" -> SettingsMcpPage(viewModel, onBack)

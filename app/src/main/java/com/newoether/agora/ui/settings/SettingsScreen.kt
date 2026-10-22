@@ -273,6 +273,7 @@ internal val baseSettingsGroups = listOf(
         SettingsCategory("todo", R.string.settings_todo, R.string.settings_todo_desc, Icons.Default.Checklist),
         SettingsCategory("subagents", R.string.settings_subagents, R.string.settings_subagents_desc, Icons.Default.AccountTree),
         SettingsCategory("interaction", R.string.settings_interaction, R.string.settings_interaction_desc, Icons.Default.QuestionAnswer),
+        SettingsCategory("assistant", R.string.settings_assistant, R.string.settings_assistant_desc, Icons.Default.Assistant),
     )),
     SettingsGroupData(titleRes = R.string.settings_group_network, items = listOf(
         SettingsCategory("proxy", R.string.settings_proxy, R.string.settings_proxy_desc, Icons.Default.Lan),

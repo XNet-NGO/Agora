@@ -52,13 +52,10 @@ class VoiceInputManager(private val appContext: Context) {
         }
         if (capturing) return
 
-        val e = SherpaSttEngine(
-            encoder = SherpaSttBootstrap.encoderFile(appContext),
-            decoder = SherpaSttBootstrap.decoderFile(appContext),
-            joiner = SherpaSttBootstrap.joinerFile(appContext),
-            tokens = SherpaSttBootstrap.tokensFile(appContext),
-        )
-        if (!e.start()) { onError("Could not initialize the speech recognizer."); onEnd(); return }
+        // Borrow the shared, preloaded recognizer instead of building one per session. If it
+        // isn't warm yet (first use), acquire loads it now; subsequent sessions are instant.
+        val e = SttEngineHolder.acquire(appContext)
+        if (e == null) { onError("Could not initialize the speech recognizer."); onEnd(); return }
         engine = e
         capturing = true
         captureThread = thread(name = "sherpa-stt-ui") { loop(e, onPartial, onFinal, onError, onEnd) }
@@ -140,7 +137,9 @@ class VoiceInputManager(private val appContext: Context) {
 
     private fun cleanup() {
         capturing = false
-        try { engine?.close() } catch (_: Throwable) {}
+        // Return the shared engine to the holder (stream released, recognizer kept warm) rather
+        // than closing it, so the next session reuses the loaded recognizer.
+        if (engine != null) { runCatching { SttEngineHolder.release() } }
         engine = null
     }
 }

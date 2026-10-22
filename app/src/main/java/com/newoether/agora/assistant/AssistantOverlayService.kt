@@ -139,7 +139,7 @@ class AssistantOverlayService : Service() {
             alpha = 0.95f
             layoutParams = FrameLayout.LayoutParams(size, size)
         }
-        attachDragAndTap(iv) { expand() }
+        attachDragAndTap(iv, onLongPress = { dismiss() }) { expand() }
         bubble = iv
         return iv
     }
@@ -168,15 +168,24 @@ class AssistantOverlayService : Service() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val close = ImageButton(this).apply {
+        val collapseBtn = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_revert)
+            background = null
+            setColorFilter(Color.WHITE)
+            contentDescription = getString(R.string.collapse)
+            setOnClickListener { collapse() }
+        }
+        val dismissBtn = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
             background = null
             setColorFilter(Color.WHITE)
-            setOnClickListener { collapse() }
+            contentDescription = getString(R.string.assistant_overlay_dismiss)
+            setOnClickListener { dismiss() }
         }
         attachDrag(header) // drag the panel by its header
         header.addView(title)
-        header.addView(close)
+        header.addView(collapseBtn)
+        header.addView(dismissBtn)
         col.addView(header)
 
         // Response area (scrollable).
@@ -259,6 +268,19 @@ class AssistantOverlayService : Service() {
         }
     }
 
+    /**
+     * Fully dismiss the overlay: clear the user's enable preference (so Settings reflects it and
+     * it does not reappear) and stop the service, which removes the window. Reachable via the
+     * panel's dismiss (×) button or a long-press on the collapsed bubble.
+     */
+    private fun dismiss() {
+        runCatching {
+            getSharedPreferences(ASSISTANT_PREFS, Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_OVERLAY_ENABLED, false).apply()
+        }
+        stopSelf()
+    }
+
     private fun toggleStt() {
         if (listening) { voice.stop(); return }
         if (!SherpaSttBootstrap.isInstalled(this)) {
@@ -323,20 +345,37 @@ class AssistantOverlayService : Service() {
         }
     }
 
-    /** Drag-to-move on [handle]; a tap (no significant movement) runs [onTap]. */
-    private fun attachDragAndTap(handle: View, onTap: () -> Unit) {
+    /**
+     * Drag-to-move on [handle]; a tap (no significant movement) runs [onTap]; a press held past
+     * the long-press timeout without moving runs [onLongPress]. Used so the collapsed bubble can
+     * be tapped to open, dragged to reposition, or long-pressed to dismiss the overlay.
+     */
+    private fun attachDragAndTap(handle: View, onLongPress: (() -> Unit)? = null, onTap: () -> Unit) {
         var downX = 0f; var downY = 0f; var startX = 0; var startY = 0; var moved = false
-        handle.setOnTouchListener { _, e ->
+        var longFired = false
+        val longPress = Runnable { if (!moved) { longFired = true; onLongPress?.invoke() } }
+        handle.setOnTouchListener { v, e ->
             val lp = params ?: return@setOnTouchListener false
             when (e.action) {
-                MotionEvent.ACTION_DOWN -> { downX = e.rawX; downY = e.rawY; startX = lp.x; startY = lp.y; moved = false; true }
+                MotionEvent.ACTION_DOWN -> {
+                    downX = e.rawX; downY = e.rawY; startX = lp.x; startY = lp.y; moved = false; longFired = false
+                    if (onLongPress != null) v.postDelayed(longPress, LONG_PRESS_MS)
+                    true
+                }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (e.rawX - downX).toInt(); val dy = (e.rawY - downY).toInt()
-                    if (kotlin.math.abs(dx) > dp(6) || kotlin.math.abs(dy) > dp(6)) moved = true
+                    if (kotlin.math.abs(dx) > dp(6) || kotlin.math.abs(dy) > dp(6)) {
+                        moved = true; v.removeCallbacks(longPress)
+                    }
                     lp.x = startX + dx; lp.y = startY + dy
                     runCatching { windowManager?.updateViewLayout(root, lp) }; true
                 }
-                MotionEvent.ACTION_UP -> { if (!moved) onTap(); true }
+                MotionEvent.ACTION_UP -> {
+                    v.removeCallbacks(longPress)
+                    if (!moved && !longFired) onTap()
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> { v.removeCallbacks(longPress); true }
                 else -> false
             }
         }
@@ -399,6 +438,11 @@ class AssistantOverlayService : Service() {
         private const val TAG = "AgoraAssistOverlay"
         private const val CHANNEL_ID = "agora_assistant_overlay"
         private const val NOTIFICATION_ID = 73
+        private const val LONG_PRESS_MS = 500L
+        // Must match SettingsAssistantPage's PREFS / KEY_OVERLAY_ENABLED so a dismiss from the
+        // overlay turns the Settings toggle off and prevents the bubble from reappearing.
+        private const val ASSISTANT_PREFS = "assistant"
+        private const val KEY_OVERLAY_ENABLED = "overlay_enabled"
         private val ACCENT = 0xFF1E88E5.toInt()
         private val PANEL_BG = 0xF21C1C1C.toInt()
 

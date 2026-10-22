@@ -31,6 +31,21 @@ internal class GenerationToolOverlay(
     fun snapshot(): List<MessageSegment> =
         segments.toList() + citations.map { it.toMessageSegment() }
 
+    /** Request-boundary rollback includes merged citations and live stream-to-segment indices. */
+    fun capture(): () -> Unit {
+        val savedSegments = segments.toList()
+        val savedCitations = citations.toList()
+        val savedIndices = streamIndices.toMap()
+        return {
+            segments.clear()
+            segments.addAll(savedSegments)
+            citations.clear()
+            citations.addAll(savedCitations)
+            streamIndices.clear()
+            streamIndices.putAll(savedIndices)
+        }
+    }
+
     fun contentSnapshot(): List<MessageSegment> = segments.toList()
 
     fun replaceAll(replacement: List<MessageSegment>) {
@@ -209,17 +224,17 @@ internal class GenerationToolOverlay(
         )
     }
 
-    fun releaseCommittedResponseState(toolCallIds: Set<String>) {
+    fun markCommittedRound(toolCallIds: Set<String>, toolRoundId: String) {
         if (toolCallIds.isEmpty()) return
         segments.indices.forEach { index ->
             val segment = segments[index]
             if (
                 segment.type == "tool" &&
-                segment.toolCallId in toolCallIds &&
-                (segment.responseOutputItems.isNotEmpty() ||
-                    segment.responseOutputItemProvider != null)
+                segment.toolRoundId == null &&
+                segment.toolCallId in toolCallIds
             ) {
                 segments[index] = segment.copy(
+                    toolRoundId = toolRoundId,
                     responseOutputItems = emptyList(),
                     responseOutputItemProvider = null,
                 )

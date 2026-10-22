@@ -1,7 +1,68 @@
 # Provider Output and Controls Contract
 
 This is a binding part of the [message generation contract](message-generation.md).
-It preserves the requirements of section 8.9; scope and authority are unchanged.
+It preserves the requirements of section 8.10; scope and authority are unchanged.
+
+## Complete forwarding and explicit unsupported evidence (2026-09-08)
+
+The owner's following requirements are binding acceptance criteria, not a claim that the current
+implementation already satisfies them:
+
+```text
+帮我全面核查所有provider，不得有任何一个遗漏，不得有任何一个字段遗漏。每一个provider我必须看到所有字段的完整透传，且必须在最终api request内出现，还必须有效
+```
+
+```text
+对于不支持的字段，每一个都必须明确标出不支持的source，里面必须看到不支持的声明。如果没有source且没有支持该结论的声明，视为不合格。其他情况，必须透传，不得有任何遗漏借口。
+```
+
+1. Inventory every Provider, transport branch, configuration field and final request field. Include
+   built-in, custom and synthetic/local paths, nested message/tool fields, and every generation
+   caller. No Provider, field or branch may disappear from the audit because it is inconvenient,
+   untested, unknown, previously classified as not applicable, or inherited from another adapter.
+2. Trace every configured field to the final dispatched API request and show its exact location,
+   value, encoding and any transformation. Configuration objects, helper output and UI state alone
+   are not wire evidence. Body, headers and URL are distinct request locations; client-local
+   controls must show their final request effect rather than being silently excluded. A Local or
+   synthetic path must identify its real execution boundary and must not fabricate an HTTP request.
+3. Every field must be effective as well as forwarded. Distinguish final production-request capture,
+   upstream semantic evidence and actual behavior verification. HTTP success, compilation, a passed
+   test count or mere field presence cannot prove effectiveness. Sent-but-ignored, rejected,
+   incorrectly transformed and unverified fields must not receive an effective-forwarding pass.
+4. Every unsupported-field conclusion requires a directly inspectable source and the exact statement
+   in that source establishing non-support, with its Provider, protocol, model/version and operating
+   mode scope and retrieval date. Cite each field individually, even when several share a source.
+   Documentation silence, absence from a schema or SDK, legacy code, old contracts and previous
+   audit conclusions are not an explicit unsupported statement.
+5. A missing source or a source without a statement supporting that exact conclusion fails
+   acceptance. Mark it evidence-insufficient and unresolved, never supported, unsupported, N/A or
+   passed by assumption. It cannot authorize dropping a configured field. Apart from explicitly
+   evidenced non-support, complete forwarding remains mandatory; no silent omission, field-removal
+   retry, hidden default substitution or display-only setting may replace it.
+6. Deliver the complete Provider-by-field report to the owner with no blank/unaccounted cells.
+   Record the final request path, actual value/mapping, effectiveness evidence and verification
+   status for each field. Negative claims must include their source statement. Any missing field,
+   unproven exemption or unverified effect prevents an all-Providers/all-fields completion claim.
+
+This evidence gate takes precedence over earlier applicability, omission and N/A assertions in
+[message-generation.md](message-generation.md) and this contract, including the provider-specific
+prose below. Those assertions do not themselves establish upstream non-support and must be revalidated
+field by field. Persisting this contract does not grant authorization for production/test edits,
+credentials, paid requests, Git mutations or deployment.
+
+The owner's repair-scope clarification on 2026-09-08 is:
+
+```text
+我让你修provider字段问题！
+```
+
+Repair Provider field forwarding, encoding, validation, decoding and continuation replay within the
+existing product. Do not turn this work into a new parameter-editor feature, Skill permission
+migration or backup-policy redesign. Those unrelated choices are not prerequisites for Provider
+field repair. Keep every Provider and unresolved field accounted for; a bounded completed batch
+does not establish completion of the full audit or model-side effectiveness.
+
+## Provider controls and output
 
 An official OpenAI Provider or a custom Provider selected as OpenAI-compatible, together with
 Responses API enabled, is sufficient to expose both `OpenAI Search` and `Service Tier` in the

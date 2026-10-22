@@ -59,6 +59,8 @@ internal data class NativeConversationIndexEntry(
 internal data class ShellDeviceSecrets(
     val apiKey: String = "",
     val sshPassword: String = "",
+    val sshPrivateKey: String? = null,
+    val sshKeyPassphrase: String? = null,
 )
 
 @Serializable

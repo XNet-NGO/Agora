@@ -44,9 +44,25 @@ class RemoteErrorPresentationTest {
         }
     }
 
-    @Test fun uncertainDeliveryNeverOffersABlindSendRetry() {
+    @Test fun uncertainDeliveryUsesAShortLocalizedNoticeWithoutAnAction() {
         val notice = RemoteNotice("send_failed", RemoteFailure.SERVICE, 1, code = "delivery_unconfirmed")
-        assertTrue(remoteNoticeMessage(context("en"), notice).contains("before sending again"))
+        val expectedByLocale = linkedMapOf(
+            "en" to "Could not confirm that the message was sent.",
+            "ar" to "تعذر تأكيد إرسال الرسالة.",
+            "de" to "Es konnte nicht bestätigt werden, dass die Nachricht gesendet wurde.",
+            "es" to "No se pudo confirmar que el mensaje se haya enviado.",
+            "fr" to "Impossible de confirmer que le message a été envoyé.",
+            "ja" to "メッセージが送信されたことを確認できませんでした。",
+            "ko" to "메시지가 전송되었는지 확인할 수 없습니다.",
+            "pt-BR" to "Não foi possível confirmar que a mensagem foi enviada.",
+            "ru" to "Не удалось подтвердить отправку сообщения.",
+            "vi" to "Không thể xác nhận tin nhắn đã được gửi.",
+            "zh-CN" to "未能确认发送成功。",
+            "zh-TW" to "未能確認傳送成功。",
+        )
+        expectedByLocale.forEach { (tag, expected) ->
+            assertEquals(tag, expected, remoteNoticeMessage(context(tag), notice))
+        }
         assertFalse(notice.canRetryRead)
     }
 }

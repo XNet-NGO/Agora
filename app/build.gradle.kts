@@ -20,7 +20,14 @@ android {
     testOptions.unitTests.isIncludeAndroidResources = true
     // Robolectric installs Conscrypt as the first security provider for the whole test JVM;
     // on JDK 17+ its TLS server needs reflective access to java.net (InetAddress.holder).
-    testOptions.unitTests.all { it.jvmArgs("--add-opens=java.base/java.net=ALL-UNNAMED") }
+    testOptions.unitTests.all {
+        it.jvmArgs("--add-opens=java.base/java.net=ALL-UNNAMED")
+        // The full Robolectric suite (~4k tests) needs a real heap; the default inherited
+        // from the constrained-runner gradle.properties OOMs mid-run. Cap forks so peak
+        // memory stays bounded on small runners.
+        it.maxHeapSize = "2g"
+        it.setForkEvery(300L)
+    }
     compileSdk {
         version = release(36)
     }

@@ -69,6 +69,7 @@ internal fun ChatMarkdownCodeBlock(
     code: String,
     autoWrap: Boolean,
     modifier: Modifier = Modifier,
+    showHeader: Boolean = true,
 ) {
     val assets = rememberChatMarkdownAssets(MaterialTheme.colorScheme.onSurface)
     CompositionLocalProvider(
@@ -86,7 +87,7 @@ internal fun ChatMarkdownCodeBlock(
             code = code,
         ) {
             Column {
-                ChatCodeBlockHeader(language = null, code = code)
+                if (showHeader) ChatCodeBlockHeader(language = null, code = code)
                 val codeStyle = assets.renderContext.typography.code.copy(
                     color = MaterialTheme.colorScheme.onSurface,
                 )

@@ -6,29 +6,6 @@ import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.RunEndReason
 import com.newoether.agora.model.RunStatus
 import kotlinx.coroutines.flow.Flow
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-
-private fun decodeSelectionMap(raw: String?): MutableMap<String?, String> =
-    raw?.let {
-        runCatching {
-            Json.decodeFromString<Map<String, String>>(it)
-                .mapKeysTo(mutableMapOf()) { entry ->
-                    if (entry.key == "null") null else entry.key
-                }
-        }.getOrDefault(mutableMapOf())
-    } ?: mutableMapOf()
-
-internal fun encodeSelectionMap(selections: Map<String?, String>): String =
-    Json.encodeToString(selections.mapKeys { it.key ?: "null" })
-
-/** Only the columns needed to paint navigation; no conversation-owned payloads. */
-data class DrawerConversationRow(
-    val id: String,
-    val title: String,
-    val hasUnreadGeneration: Boolean,
-    val isPinned: Boolean,
-)
 
 @Dao
 interface ChatDao :
@@ -37,13 +14,15 @@ interface ChatDao :
     ChatProviderContextDao,
     ChatSearchDao,
     ChatMediaReferencesDao,
+    ChatTodoDao,
+    ChatSubagentDao,
     NewChatPersistDao {
-    // Task executions always remain in their owning Task's History.
-    @Query("SELECT id, title, systemPromptId, modelId, taskId, origin, graduated, hasUnreadGeneration, isPinned, selectedBranchesJson FROM conversations WHERE taskId IS NULL ORDER BY lastUpdated DESC")
+    // Navigation never reads branch payloads; selected-owner observation owns them.
+    @Query("SELECT id, title, systemPromptId, modelId, taskId, origin, graduated, hasUnreadGeneration, isPinned, NULL AS selectedBranchesJson, parentConversationId FROM conversations WHERE taskId IS NULL AND parentConversationId IS NULL ORDER BY lastUpdated DESC")
     fun getAllConversations(): Flow<List<ChatConversation>>
-    @Query("SELECT id, title, hasUnreadGeneration, isPinned FROM conversations WHERE taskId IS NULL ORDER BY isPinned DESC, lastUpdated DESC, id LIMIT :limit")
+    @Query("SELECT id, title, hasUnreadGeneration, isPinned FROM conversations WHERE taskId IS NULL AND parentConversationId IS NULL ORDER BY isPinned DESC, lastUpdated DESC, id LIMIT :limit")
     fun observeDrawerConversations(limit: Int): Flow<List<DrawerConversationRow>>
-    @Query("SELECT id, title, hasUnreadGeneration, isPinned FROM conversations WHERE taskId IS NULL AND id IN (:ids)")
+    @Query("SELECT id, title, hasUnreadGeneration, isPinned FROM conversations WHERE taskId IS NULL AND parentConversationId IS NULL AND id IN (:ids)")
     suspend fun getDrawerConversations(ids: List<String>): List<DrawerConversationRow>
 
     @Query("SELECT * FROM conversations WHERE taskId = :taskId ORDER BY lastUpdated DESC")
@@ -673,6 +652,9 @@ interface ChatDao :
 
     @Query("SELECT * FROM messages WHERE id IN (:ids)")
     suspend fun getMessagesByIds(ids: List<String>): List<MessageEntity>
+
+    @Query("SELECT * FROM messages WHERE conversationId = :conversationId AND id IN (:ids)")
+    fun observeMessagesByIds(conversationId: String, ids: List<String>): Flow<List<MessageEntity>>
 
     @Query("UPDATE conversations SET draftText = :text, draftAttachments = :attachments, dataChangedAt = :at WHERE id = :id")
     suspend fun updateDraft(id: String, text: String, attachments: String?, at: Long)

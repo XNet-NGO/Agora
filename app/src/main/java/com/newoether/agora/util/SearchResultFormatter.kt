@@ -201,7 +201,8 @@ object SearchResultFormatter {
                 val participant = (obj["participant"] as? JsonPrimitive)?.content ?: ""
                 val role = if (participant == "USER") userRole else modelRole
                 val text = (obj["text"] as? JsonPrimitive)?.content ?: ""
-                "$role: $text"
+                val error = (obj["error"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() && it != text }
+                "$role: $text" + error?.let { "\n$it" }.orEmpty()
             }
         } else {
             context.getString(R.string.conversation_read_empty)

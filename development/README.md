@@ -80,10 +80,14 @@ model and may admit one bounded low-priority cache worker. It never authorizes a
 conversation, embedding, attachment, Run, or owner scan.
 
 Explicitly opening one conversation is the admission boundary for its state. That action may load,
-deserialize, validate, and recover only the selected owner. Opening conversation A must not read,
-validate, restore, cache, or schedule work for conversation B. Durable state for an unopened owner
-remains dormant after process death. Work already admitted for an opened owner may continue in the
-same process after the user switches away, but this never authorizes a new global scan.
+deserialize, validate, and recover the selected owner. It also admits ordinary validation of all indexed
+child conversations in the selected parent family; a selected child must prove its durable parent
+membership before widening that scope. Native and WebUI share one open-recovery boundary. Enumerate
+only child IDs, validate one child at a time, and skip active in-process execution or registered
+delegation Jobs until their lifecycle owner removes them.
+Opening conversation A must not read, validate, restore, cache, or schedule work for unrelated owners.
+Unopened families remain dormant after process death. Work already admitted for an opened family may
+continue in the same process after navigation, but this never authorizes a global scan or restart.
 
 Load performance is a primary architecture, implementation, and review constraint. Startup and page
 entry queries must use narrow projections, avoid unused large columns, and keep database, JSON, file,

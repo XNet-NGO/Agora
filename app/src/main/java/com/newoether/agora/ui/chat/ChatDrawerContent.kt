@@ -161,6 +161,7 @@ internal fun ChatDrawerContent(
     drawerWidth: Dp,
     scope: CoroutineScope,
     inputFocusRequester: FocusRequester,
+    drawerVisible: Boolean,
     onRequestClose: suspend () -> Unit,
     onSettingsButtonTop: (Float) -> Unit,
     onOpenSettings: () -> Unit,
@@ -183,6 +184,9 @@ internal fun ChatDrawerContent(
     }
     val isConversationListLoading = conversationList == null
     val currentConversationId by viewModel.currentConversationId.collectAsState()
+    val selectedConversation by viewModel.currentConversation.collectAsState()
+    val drawerConversationId = selectedConversation?.takeIf { it.id == currentConversationId }
+        ?.parentConversationId ?: currentConversationId
     val isSwitching by viewModel.isSwitching.collectAsState()
     val generatingConversationIds by viewModel.generatingConversationIds.collectAsState()
     val customProviders by viewModel.settings.customProviders.collectAsState()
@@ -288,18 +292,17 @@ internal fun ChatDrawerContent(
                 .padding(horizontal = 16.dp, vertical = 20.dp)
                 .clearFocusOnTap()
         ) {
-            Text(stringResource(R.string.conversations), style = ChatType.conversationsTitle)
-            Spacer(modifier = Modifier.height(12.dp))
-
             DrawerSearchBar(
                 query = search.query,
                 onQueryChange = { search.query = it },
                 searching = search.isSearching,
+                drawerVisible = drawerVisible,
             )
             Spacer(modifier = Modifier.height(12.dp))
 
             Crossfade(
-                targetState = search.results.takeIf { search.isActive },
+                targetState = search.results.takeIf { search.isActive }
+                    ?.filter { "conversation:${it.first.conversationId}" in conversationsByKey },
                 animationSpec = tween(180),
                 label = "DrawerConversationContentTransition",
                 modifier = Modifier.weight(1f),
@@ -420,7 +423,7 @@ internal fun ChatDrawerContent(
                                         return@items
                                     }
                                     val conversation = conversationsByKey.getValue(key)
-                                    val isSelected = conversation.id == currentConversationId
+                                    val isSelected = conversation.id == drawerConversationId
                                     val visibleConversationTitle = replaceCustomProviderIdsForDisplay(
                                         conversation.title,
                                         customProviders,
@@ -431,7 +434,7 @@ internal fun ChatDrawerContent(
                                         isSelected = isSelected,
                                         hasUnreadGeneration = conversation.hasUnreadGeneration,
                                     )
-                                    val menuEnabled = !isSwitching && !isGenerating
+                                    val menuEnabled = !isSwitching
                                     val deleteEnabled = menuEnabled &&
                                         conversation.id !in submittingConversationIds
                                     val unreadDescription =
@@ -506,7 +509,7 @@ internal fun ChatDrawerContent(
                                                     enabled = !isSwitching,
                                                     hapticFeedbackEnabled = false,
                                                     onClick = {
-                                                        viewModel.selectConversation(conversation.id)
+                                                        if (!isSelected) viewModel.selectConversation(conversation.id)
                                                         scope.launch {
                                                             onRequestClose()
                                                         }
@@ -755,7 +758,7 @@ internal fun ChatDrawerContent(
                                             query = search.query,
                                             customProviders = customProviders,
                                             onClick = {
-                                                viewModel.selectConversation(convId)
+                                                if (convId != drawerConversationId) viewModel.selectConversation(convId)
                                                 scope.launch {
                                                     onRequestClose()
                                                 }

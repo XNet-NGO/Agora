@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="embedding_import_title">임베딩 모델 가져오기 (.gguf)</string>
+    <string name="embedding_import_desc">로컬 시맨틱 검색을 위한 GGUF 임베딩 모델 가져오기</string>
+    <string name="local_chat_import_title">채팅 모델 가져오기 (.gguf)</string>
+    <string name="local_chat_import_desc">이 기기에서 대화를 실행할 GGUF 채팅 모델 가져오기</string>
+    <string name="local_projector_import_title">비전 프로젝터 가져오기 (.mmproj)</string>
+</resources>

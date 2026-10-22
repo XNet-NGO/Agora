@@ -20,11 +20,12 @@ internal val Context.dataStore by preferencesDataStore(
     name = "settings", produceMigrations = { listOf(modelProviderNamesMigration) },
 )
 
-class SettingsManager(private val context: Context) {
+class SettingsManager(private val context: Context) : SettingsManagerAppearanceBase(context) {
     private val json = Json { ignoreUnknownKeys = true }
     internal val modelPreferenceStore = SettingsModelPreferenceStore(context.dataStore, json)
     internal val backupPreferenceStore = SettingsBackupPreferenceStore(context.dataStore)
     internal val systemPromptStore = SettingsSystemPromptStore(context.dataStore, json)
+    internal val shellDeviceStore = SettingsShellDeviceStore(context.dataStore, json)
 
     companion object {
         const val DEFAULT_PROXY_HOST = "127.0.0.1"
@@ -198,6 +199,24 @@ class SettingsManager(private val context: Context) {
     // Confirm before the model runs state-changing commands on remote shell servers. Default on.
     val shellConfirmEnabled: Flow<Boolean> = context.dataStore.data.map { it[SHELL_CONFIRM_ENABLED] ?: true }
     val askUserEnabled: Flow<Boolean> = context.dataStore.data.map { it[ASK_USER_ENABLED] ?: true }
+    val askUserTimeoutMinutes: Flow<Int> = context.dataStore.data.map { normalizeAskUserTimeoutMinutes(it[ASK_USER_TIMEOUT_MINUTES]) }
+    val todoEnabled: Flow<Boolean> = context.dataStore.data.map { it[TODO_ENABLED] ?: true }
+    val subagentToolsEnabled: Flow<Boolean> = context.dataStore.data.map { it[SUBAGENT_TOOLS_ENABLED] ?: true }
+    val subagentMaxTotal: Flow<Int> = context.dataStore.data.map { normalizeSubagentMaxTotal(it[SUBAGENT_MAX_TOTAL]) }
+    val subagentMaxConcurrent: Flow<Int> = context.dataStore.data.map {
+        normalizeSubagentMaxConcurrent(it[SUBAGENT_MAX_CONCURRENT], normalizeSubagentMaxTotal(it[SUBAGENT_MAX_TOTAL]))
+    }
+    val subagentCapsuleDisplayMode: Flow<String> = context.dataStore.data.map {
+        SubagentCapsuleDisplayModes.normalize(it[SUBAGENT_CAPSULE_DISPLAY_MODE])
+    }
+    val subagentEnabledModels: Flow<Set<String>?> = modelPreferenceStore.subagentEnabledModels
+    val subagentRecommendedModel: Flow<String?> = modelPreferenceStore.subagentRecommendedModel
+    val subagentModelIds: Flow<Set<String>> = modelPreferenceStore.subagentModelIds
+    suspend fun addSubagentModels(models: Set<String>) = modelPreferenceStore.addSubagentModels(models)
+    suspend fun removeSubagentModel(model: String) = modelPreferenceStore.removeSubagentModel(model)
+    suspend fun saveSubagentEnabledModels(models: Set<String>?, merge: Boolean = false) =
+        modelPreferenceStore.saveSubagentEnabledModels(models, merge)
+    suspend fun saveSubagentRecommendedModel(model: String?) = modelPreferenceStore.saveSubagentRecommendedModel(model)
     val shellDevices: Flow<List<ShellDeviceConfig>> =
         context.dataStore.data.map { preferences -> decodeEncryptedShellDevices(preferences, json) }
     val mcpServers: Flow<List<McpServerConfig>> = context.dataStore.data.map { pref ->
@@ -643,8 +662,31 @@ class SettingsManager(private val context: Context) {
     suspend fun saveAskUserEnabled(enabled: Boolean) {
         context.dataStore.edit { it[ASK_USER_ENABLED] = enabled }
     }
+    suspend fun saveAskUserTimeoutMinutes(minutes: Int) {
+        context.dataStore.edit { it[ASK_USER_TIMEOUT_MINUTES] = normalizeAskUserTimeoutMinutes(minutes) }
+    }
+    suspend fun saveTodoEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[TODO_ENABLED] = enabled }
+    }
+    suspend fun saveSubagentMaxTotal(value: Int) = saveSubagentLimits(maxTotal = value)
+    suspend fun saveSubagentMaxConcurrent(value: Int) = saveSubagentLimits(maxConcurrent = value)
+    internal suspend fun saveSubagentLimits(maxTotal: Int? = null, maxConcurrent: Int? = null) {
+        context.dataStore.edit { prefs ->
+            val previousTotal = normalizeSubagentMaxTotal(prefs[SUBAGENT_MAX_TOTAL])
+            val total = normalizeSubagentMaxTotal(maxTotal ?: previousTotal)
+            val concurrent = maxConcurrent ?: normalizeSubagentMaxConcurrent(prefs[SUBAGENT_MAX_CONCURRENT], previousTotal)
+            prefs[SUBAGENT_MAX_TOTAL] = total
+            prefs[SUBAGENT_MAX_CONCURRENT] = normalizeSubagentMaxConcurrent(concurrent, total)
+        }
+    }
+    suspend fun saveSubagentCapsuleDisplayMode(mode: String) {
+        context.dataStore.edit { it[SUBAGENT_CAPSULE_DISPLAY_MODE] = SubagentCapsuleDisplayModes.normalize(mode) }
+    }
+    suspend fun saveSubagentToolsEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[SUBAGENT_TOOLS_ENABLED] = enabled }
+    }
     suspend fun saveShellDevices(devices: List<ShellDeviceConfig>) {
-        context.dataStore.edit { it[SHELL_DEVICES_JSON] = com.newoether.agora.util.SecretCrypto.encrypt(json.encodeToString(devices)) }
+        context.dataStore.edit { it[SHELL_DEVICES_JSON] = encryptShellDevices(devices, json) }
     }
     suspend fun saveMcpServers(servers: List<McpServerConfig>) {
         context.dataStore.edit {
@@ -657,77 +699,6 @@ class SettingsManager(private val context: Context) {
     }
     suspend fun saveSandboxSharedStorageEnabled(enabled: Boolean) {
         context.dataStore.edit { it[SANDBOX_SHARED_STORAGE_ENABLED] = enabled }
-    }
-    suspend fun saveThemeMode(mode: String) {
-        context.dataStore.edit { it[THEME_MODE] = mode }
-    }
-    suspend fun saveAmoledEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[AMOLED_ENABLED] = enabled }
-    }
-    suspend fun saveColorScheme(scheme: String) {
-        context.dataStore.edit { it[COLOR_SCHEME] = scheme }
-    }
-    suspend fun saveDynamicColor(enabled: Boolean) {
-        context.dataStore.edit { it[DYNAMIC_COLOR] = enabled }
-    }
-    suspend fun saveBlurEffectsEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[BLUR_EFFECTS_ENABLED] = enabled }
-    }
-    suspend fun saveReduceMotion(enabled: Boolean) {
-        context.dataStore.edit { it[REDUCE_MOTION] = enabled }
-    }
-    suspend fun saveStickToBottom(enabled: Boolean) {
-        context.dataStore.edit { it[STICK_TO_BOTTOM] = enabled }
-    }
-    suspend fun saveParseInlineDollarMath(enabled: Boolean) {
-        context.dataStore.edit { it[PARSE_INLINE_DOLLAR_MATH] = enabled }
-    }
-    suspend fun saveAutoWrapCodeBlocks(enabled: Boolean) {
-        context.dataStore.edit { it[AUTO_WRAP_CODE_BLOCKS] = enabled }
-    }
-    suspend fun saveHapticsEnabled(enabled: Boolean) {
-        context.dataStore.edit { it[HAPTICS_ENABLED] = enabled }
-    }
-    suspend fun saveDetailedTokenUsage(enabled: Boolean) {
-        context.dataStore.edit { it[DETAILED_TOKEN_USAGE] = enabled }
-    }
-    suspend fun saveToolCallDisplayMode(mode: String) {
-        context.dataStore.edit { it[TOOL_CALL_DISPLAY_MODE] = ToolCallDisplayModes.normalize(mode) }
-    }
-    suspend fun saveThinkingSegmentDisplayMode(mode: String) {
-        context.dataStore.edit {
-            it[THINKING_SEGMENT_DISPLAY_MODE] = ThinkingSegmentDisplayModes.normalize(mode)
-        }
-    }
-    suspend fun saveAutoExpandActiveGroup(enabled: Boolean) {
-        context.dataStore.edit { it[AUTO_EXPAND_ACTIVE_GROUP] = enabled }
-    }
-    suspend fun saveFontPreference(value: String) {
-        context.dataStore.edit { it[FONT_PREFERENCE] = value }
-    }
-    suspend fun saveCustomFontPath(value: String) {
-        context.dataStore.edit { it[CUSTOM_FONT_PATH] = value }
-    }
-    suspend fun saveCustomFontName(value: String) {
-        context.dataStore.edit { it[CUSTOM_FONT_NAME] = value }
-    }
-    suspend fun saveUserBubbleColor(value: String) {
-        context.dataStore.edit { it[USER_BUBBLE_COLOR] = value }
-    }
-    suspend fun saveChatBackground(value: String) {
-        context.dataStore.edit { it[CHAT_BACKGROUND] = value }
-    }
-    suspend fun saveChatBackgroundOpacity(value: Float) {
-        context.dataStore.edit { it[CHAT_BACKGROUND_OPACITY] = value }
-    }
-    suspend fun saveChatBackgroundVideoMuted(value: Boolean) {
-        context.dataStore.edit { it[CHAT_BACKGROUND_VIDEO_MUTED] = value }
-    }
-    suspend fun saveChatBackgroundVideoLoop(value: Boolean) {
-        context.dataStore.edit { it[CHAT_BACKGROUND_VIDEO_LOOP] = value }
-    }
-    suspend fun saveSchemeStyle(style: String) {
-        context.dataStore.edit { it[SCHEME_STYLE] = style }
     }
     suspend fun saveFirstLaunchTime(time: Long) {
         context.dataStore.edit { it[FIRST_LAUNCH_TIME] = time }

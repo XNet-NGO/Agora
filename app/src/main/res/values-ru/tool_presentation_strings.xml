@@ -183,4 +183,5 @@
         <item quantity="many">Найдено %1$d результатов</item>
         <item quantity="other">Найдено %1$d результатов</item>
     </plurals>
+    <string name="tool_json_empty_container">Нет содержимого</string>
 </resources>

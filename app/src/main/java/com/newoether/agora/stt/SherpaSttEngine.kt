@@ -37,6 +37,48 @@ class SherpaSttEngine(
     fun isAvailable(): Boolean =
         encoder.isFile && decoder.isFile && joiner.isFile && tokens.isFile
 
+    /** True once the (expensive) recognizer is loaded and resident in native memory. */
+    @Synchronized
+    fun isWarm(): Boolean = recognizer != null
+
+    /**
+     * Load the recognizer and keep it resident WITHOUT opening a capture stream. Use this to
+     * preload the model at app startup so the first dictation has no model-load latency. Safe to
+     * call repeatedly (idempotent). Returns true if the recognizer is loaded afterwards.
+     */
+    @Synchronized
+    fun preload(): Boolean = start()
+
+    /**
+     * Begin a fresh capture session on the warm recognizer: ensure the model is loaded (loading it
+     * now if this is the first use), then open a NEW stream, releasing any previous one. The
+     * recognizer itself is reused across sessions, which is the whole point of keeping it warm.
+     * Returns true if a stream is ready.
+     */
+    @Synchronized
+    fun beginSession(): Boolean {
+        if (!start()) return false
+        val r = recognizer ?: return false
+        return try {
+            stream?.let { old -> runCatching { old.release() } }
+            stream = r.createStream()
+            true
+        } catch (t: Throwable) {
+            Log.e(TAG, "beginSession failed", t)
+            false
+        }
+    }
+
+    /**
+     * End the current capture session: release the stream but KEEP the recognizer warm for the
+     * next session. This is the key difference from [close], which also frees the recognizer.
+     */
+    @Synchronized
+    fun endSession() {
+        try { stream?.release() } catch (_: Throwable) {}
+        stream = null
+    }
+
     @Synchronized
     fun start(): Boolean {
         if (recognizer != null) return true

@@ -13,6 +13,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.newoether.agora.stt.SherpaSttBootstrap
 import com.newoether.agora.stt.SherpaSttEngine
+import com.newoether.agora.stt.SttEngineHolder
 import kotlin.concurrent.thread
 
 /**
@@ -45,13 +46,10 @@ class AgoraRecognitionService : RecognitionService() {
         }
         if (capturing) { safeError(cb, SpeechRecognizer.ERROR_RECOGNIZER_BUSY); return }
 
-        val e = SherpaSttEngine(
-            encoder = SherpaSttBootstrap.encoderFile(this),
-            decoder = SherpaSttBootstrap.decoderFile(this),
-            joiner = SherpaSttBootstrap.joinerFile(this),
-            tokens = SherpaSttBootstrap.tokensFile(this),
-        )
-        if (!e.start()) { safeError(cb, SpeechRecognizer.ERROR_CLIENT); return }
+        // Borrow the shared, preloaded recognizer from the holder (loads it now if not yet warm);
+        // a null means the model is missing or another session holds it.
+        val e = SttEngineHolder.acquire(this)
+        if (e == null) { safeError(cb, SpeechRecognizer.ERROR_RECOGNIZER_BUSY); return }
         engine = e
 
         capturing = true
@@ -140,7 +138,8 @@ class AgoraRecognitionService : RecognitionService() {
 
     private fun cleanup() {
         capturing = false
-        try { engine?.close() } catch (_: Throwable) {}
+        // Return the shared engine (stream released, recognizer kept warm) instead of closing it.
+        if (engine != null) { runCatching { SttEngineHolder.release() } }
         engine = null
     }
 

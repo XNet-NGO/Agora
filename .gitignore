@@ -44,3 +44,7 @@ app/src/fdroid/jniLibs/arm64-v8a/
 /.claude/
 signing.properties
 AGENTS.md
+
+# Editor/tooling backup files
+*.bak
+*.bak.*

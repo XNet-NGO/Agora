@@ -42,7 +42,11 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags += "-std=c++17"
-                arguments += listOf("-DANDROID_STL=c++_shared")
+                arguments += listOf(
+                    "-DANDROID_STL=c++_shared",
+                    "-DCMAKE_C_COMPILER_LAUNCHER=ccache",
+                    "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache",
+                )
                 targets += listOf("agora_proot")
             }
         }
@@ -77,6 +81,8 @@ android {
             signingConfig = releaseSigning
             // R8 shrinks and optimizes release code; keep rules live in proguard-rules.pro.
             isMinifyEnabled = true
+            // Resource shrinking removes unused resources (safe with R8 code shrinking on).
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -107,8 +113,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     dependenciesInfo {
         includeInApk = false
@@ -147,6 +153,23 @@ android {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
         }
+    }
+}
+
+// Align Kotlin bytecode target with Java 17 (compileOptions) and the JDK 21 build toolchain.
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+// Opt-in Compose compiler metrics/reports: run with -PenableComposeCompilerReports=true to
+// emit stability/skippability reports under build/compose-reports (find unstable composables).
+composeCompiler {
+    if (project.findProperty("enableComposeCompilerReports") == "true") {
+        val dir = layout.buildDirectory.dir("compose-reports")
+        metricsDestination.set(dir)
+        reportsDestination.set(dir)
     }
 }
 

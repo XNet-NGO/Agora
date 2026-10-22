@@ -47,3 +47,17 @@
 # extract JP2-encoded images from PDFs. We only extract text, so the dependency is
 # intentionally absent; silence the missing-class warning.
 -dontwarn com.gemalto.jp2.**
+
+# ONNX Runtime (vendored onnxruntime-1.28.2.jar) + onnxruntime-genai.
+# The native JNI (libonnxruntime4j_jni.so / libonnxruntime-genai-jni.so) resolves these Java
+# classes, their fields, constructors and methods BY NAME via FindClass/GetMethodID/GetFieldID
+# during OrtSession.run and generation. R8 has no visibility into those native references, so
+# without keeping them it strips e.g. ai.onnxruntime.TensorInfo and the run() aborts with
+# "JNI DETECTED ERROR IN APPLICATION: java_class == null" (ClassNotFoundException: TensorInfo).
+# Keep the whole ORT + genai Java surface.
+-keep class ai.onnxruntime.** { *; }
+-keep class ai.onnxruntime.genai.** { *; }
+-keep class com.microsoft.applications.events.** { *; }
+-keepclassmembers class ai.onnxruntime.** { *; }
+-keepclassmembers class ai.onnxruntime.genai.** { *; }
+-dontwarn ai.onnxruntime.**

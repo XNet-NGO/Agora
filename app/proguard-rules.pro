@@ -67,3 +67,12 @@
 -keepclassmembers class ai.onnxruntime.** { *; }
 -keepclassmembers class ai.onnxruntime.genai.** { *; }
 -dontwarn ai.onnxruntime.**
+
+# sherpa-onnx (on-device STT). Its JNI (libsherpa-onnx-jni.so) reads the Kotlin config classes'
+# FIELDS by exact name via GetFieldID (e.g. OnlineModelConfig.decodingMethod) and calls
+# constructors/methods by name. R8 can't see those native references, so without keeping the
+# whole com.k2fsa.sherpa.onnx surface it renames/strips those fields and OnlineRecognizer
+# construction aborts with "Failed to get field ID for decodingMethod". Keep names and members.
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+-keepclassmembers class com.k2fsa.sherpa.onnx.** { *; }
+-dontwarn com.k2fsa.sherpa.onnx.**

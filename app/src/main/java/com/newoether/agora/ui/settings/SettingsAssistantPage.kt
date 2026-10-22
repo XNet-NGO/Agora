@@ -1,7 +1,9 @@
 package com.newoether.agora.ui.settings
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -18,6 +20,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Assistant
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,14 +35,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.newoether.agora.R
 import com.newoether.agora.assistant.AssistantOverlayService
 import com.newoether.agora.assistant.AssistantRole
+import com.newoether.agora.stt.SherpaSttBootstrap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Settings > Assistant (Layer 1). Lets the user turn Agora into their device
@@ -99,6 +109,39 @@ fun SettingsAssistantPage(onBack: () -> Unit) {
         } else {
             AssistantOverlayService.stop(ctx)
         }
+    }
+
+    // ── Offline voice input (sherpa-onnx STT) ──────────────────────────────
+    val scope = rememberCoroutineScope()
+    var sttInstalled by remember { mutableStateOf(SherpaSttBootstrap.isInstalled(ctx)) }
+    var sttBusy by remember { mutableStateOf(false) }
+    var sttStatus by remember { mutableStateOf("") }
+    var micGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED,
+        )
+    }
+
+    fun startSttDownload() {
+        if (sttBusy) return
+        sttBusy = true
+        sttStatus = ""
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                SherpaSttBootstrap.setup(ctx) { line -> sttStatus = line }
+            }
+            sttInstalled = SherpaSttBootstrap.isInstalled(ctx)
+            sttBusy = false
+            if (!ok) sttStatus = ""
+        }
+    }
+
+    val micPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        micGranted = granted
+        if (granted && !sttInstalled) startSttDownload()
     }
 
     Scaffold(
@@ -187,6 +230,60 @@ fun SettingsAssistantPage(onBack: () -> Unit) {
                                     checked = overlayEnabled,
                                     onCheckedChange = { setOverlayEnabled(it) },
                                 )
+                            },
+                        )
+                    },
+                )
+
+                // Offline voice input (sherpa-onnx STT). The ~52 MB model is downloaded on
+                // demand; mic permission is requested the first time the user installs it.
+                SettingsGroup(
+                    title = stringResource(R.string.assistant_voice_group),
+                    items = listOf {
+                        SettingsItem(
+                            modifier = Modifier.clickable(enabled = !sttBusy) {
+                                when {
+                                    sttInstalled -> {
+                                        SherpaSttBootstrap.remove(ctx)
+                                        sttInstalled = false
+                                        sttStatus = ""
+                                    }
+                                    !micGranted -> micPermLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                    else -> startSttDownload()
+                                }
+                            },
+                            leadingContent = { Icon(Icons.Default.Mic, contentDescription = null) },
+                            headlineContent = { Text(stringResource(R.string.assistant_voice_title)) },
+                            supportingContent = {
+                                Text(
+                                    when {
+                                        sttBusy -> sttStatus.ifBlank { stringResource(R.string.assistant_voice_downloading) }
+                                        sttInstalled -> stringResource(R.string.assistant_voice_installed)
+                                        !micGranted -> stringResource(R.string.assistant_voice_needs_mic)
+                                        else -> stringResource(R.string.assistant_voice_desc)
+                                    },
+                                )
+                            },
+                            trailingContent = {
+                                if (sttBusy) {
+                                    CircularProgressIndicator(modifier = Modifier.height(20.dp))
+                                } else {
+                                    Switch(
+                                        checked = sttInstalled,
+                                        enabled = !sttBusy,
+                                        onCheckedChange = { want ->
+                                            if (!want) {
+                                                SherpaSttBootstrap.remove(ctx)
+                                                sttInstalled = false
+                                                sttStatus = ""
+                                            } else if (!micGranted) {
+                                                micPermLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                            } else {
+                                                startSttDownload()
+                                            }
+                                        },
+                                    )
+                                }
                             },
                         )
                     },

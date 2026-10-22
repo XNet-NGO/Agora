@@ -125,6 +125,74 @@ class DefaultSystemPromptTest {
     }
 
     @Test
+    fun create_requiresBackslashMathDelimiters() {
+        val systemPrompt = PredefinedVariables.compile(
+            DefaultSystemPrompt.create(Locale.ENGLISH).systemItems,
+            emptyMap(),
+        )
+
+        assertTrue(
+            systemPrompt.contains(
+                "Use Markdown when it improves readability.\n" +
+                    "For math, write inline formulas as \\( ... \\) and display formulas as \\[ ... \\]. " +
+                    "Do not use \$ or \$\$ as math delimiters.\n\n<active_memory_context>"
+            )
+        )
+        val beforeRule = PredefinedVariables.compile(
+            DefaultSystemPrompt.versionBeforeMathRuleForMigration(Locale.ENGLISH).systemItems,
+            emptyMap(),
+        )
+        assertTrue(beforeRule.contains("Use Markdown when it improves readability.\n\n<active_memory_context>"))
+        assertFalse(beforeRule.contains("For math"))
+    }
+
+    @Test
+    fun unmodifiedDefaultBeforeMathRuleIsMigratedInPlace() {
+        val beforeRule = DefaultSystemPrompt.versionBeforeMathRuleForMigration(Locale.SIMPLIFIED_CHINESE)
+            .copy(id = "default-id")
+        val migrated = migrateUnmodifiedBuiltInDefault(
+            prompts = listOf(beforeRule),
+            locale = Locale.SIMPLIFIED_CHINESE,
+        ).single()
+        val current = DefaultSystemPrompt.create(Locale.SIMPLIFIED_CHINESE)
+
+        assertEquals("default-id", migrated.id)
+        assertEquals(beforeRule.title, migrated.title)
+        assertEquals(
+            current.resolvedSystemItems.map { it.type to it.value },
+            migrated.resolvedSystemItems.map { it.type to it.value },
+        )
+        assertEquals(
+            current.resolvedUserItems.map { it.type to it.value },
+            migrated.resolvedUserItems.map { it.type to it.value },
+        )
+        assertEquals(
+            current.resolvedAssistantItems.map { it.type to it.value },
+            migrated.resolvedAssistantItems.map { it.type to it.value },
+        )
+    }
+
+    @Test
+    fun modifiedDefaultsBeforeMathRuleAreNotMigrated() {
+        val beforeRule = DefaultSystemPrompt.versionBeforeMathRuleForMigration(Locale.ENGLISH)
+        val contentModified = beforeRule.copy(
+            systemItems = beforeRule.systemItems + PromptTemplateItem(
+                type = PromptItemType.CUSTOM,
+                value = "custom",
+            ),
+        )
+        val titleModified = beforeRule.copy(title = "My Default")
+
+        assertEquals(
+            listOf(contentModified, titleModified),
+            migrateUnmodifiedBuiltInDefault(
+                prompts = listOf(contentModified, titleModified),
+                locale = Locale.ENGLISH,
+            ),
+        )
+    }
+
+    @Test
     fun create_wrapsUserMessagesWithSentDateAndTimeMetadata() {
         val entry = DefaultSystemPrompt.create(Locale.ENGLISH)
         val userTemplate = PredefinedVariables.splitMessageTemplate(entry.resolvedUserItems)

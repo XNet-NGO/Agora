@@ -302,9 +302,48 @@ class FiloClientTest {
                 if (mode != "existing") {
                     try { client.connect(); fail("Retired or unknown mode must be rejected") }
                     catch (_: IllegalArgumentException) { }
-                } else assertEquals("quantum", client.connect())
+                } else assertEquals(RemoteDeviceStatus.IDLE, client.connect())
             } finally { server.stop(0) }
         }
+    }
+
+    @Test fun authenticatedInfoMapsOnlyExplicitDesktopStateWithoutInferringOnlineFromTheGateway() = runBlocking {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val requests = mutableListOf<String>()
+        var desktop: String? = null
+        server.createContext("/v1/info") { exchange ->
+            requests += "${exchange.requestMethod} ${exchange.requestURI}"
+            assertEquals("Bearer $token", exchange.requestHeaders.getFirst("Authorization"))
+            val field = desktop?.let { ""","desktop":$it""" }.orEmpty()
+            val bytes = """{"protocolVersion":2,"agent":"codex","sessionMode":"existing","messageDelivery":"native-steer","outputMode":"live-messages","supportsLazyMessages":true,"device":"reachable-gateway"$field}""".toByteArray()
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        try {
+            val client = applicationFixtureClient("http://127.0.0.1:${server.address.port}/", token)
+            val cases = listOf(
+                """{"state":"connected"}""" to RemoteDeviceStatus.CONNECTED,
+                """{"state":"connecting"}""" to RemoteDeviceStatus.CONNECTING,
+                """{"state":"disconnected"}""" to RemoteDeviceStatus.IDLE,
+                """{"state":"unavailable","error":"Native owner unavailable"}""" to RemoteDeviceStatus.ERROR,
+                """{"state":"future-state","error":"Unknown native state"}""" to RemoteDeviceStatus.IDLE,
+                """{"error":"No Desktop state"}""" to RemoteDeviceStatus.IDLE,
+                """{"state":null}""" to RemoteDeviceStatus.IDLE,
+                """{"state":true}""" to RemoteDeviceStatus.IDLE,
+                """{"state":1}""" to RemoteDeviceStatus.IDLE,
+                """{"state":{}}""" to RemoteDeviceStatus.IDLE,
+                """{"state":[]}""" to RemoteDeviceStatus.IDLE,
+                "{}" to RemoteDeviceStatus.IDLE,
+                "null" to RemoteDeviceStatus.IDLE,
+                null to RemoteDeviceStatus.IDLE,
+            )
+            for ((payload, expected) in cases) {
+                desktop = payload
+                assertEquals("Desktop payload: $payload", expected, client.connect())
+            }
+            assertEquals(List(cases.size) { "GET /v1/info" }, requests)
+        } finally { server.stop(0) }
     }
 
     @Test fun protocolTwoAndNativeReceiptAndEventStreamUseIndependentAuthenticatedTransport() = runBlocking {
@@ -325,7 +364,7 @@ class FiloClientTest {
         server.start()
         try {
             val client = applicationFixtureClient("http://127.0.0.1:${server.address.port}/", token)
-            assertEquals("Computer", client.connect())
+            assertEquals(RemoteDeviceStatus.IDLE, client.connect())
             assertEquals("turn", client.send(id, "hello", id))
             assertEquals(page, client.events(id).first())
             assertEquals(listOf("Bearer $token", "Bearer $token", "Bearer $token"), auth)

@@ -12,6 +12,9 @@ object DefaultSystemPrompt {
     private const val RUSSIAN_TITLE = "\u041f\u043e \u0443\u043c\u043e\u043b\u0447\u0430\u043d\u0438\u044e"
     private const val SIMPLIFIED_CHINESE_TITLE = "\u9ed8\u8ba4"
     private const val TRADITIONAL_CHINESE_TITLE = "\u9810\u8a2d"
+    private const val MATH_DELIMITER_RULE =
+        "For math, write inline formulas as \\( ... \\) and display formulas as \\[ ... \\]. " +
+            "Do not use \$ or \$\$ as math delimiters."
     private val BUILT_IN_TITLES = setOf(
         ENGLISH_TITLE,
         ARABIC_TITLE,
@@ -47,10 +50,20 @@ object DefaultSystemPrompt {
     fun create(locale: Locale = Locale.getDefault()): SystemPromptEntry =
         SystemPromptEntry(
             title = titleForLocale(locale),
-            systemItems = systemItems(),
+            systemItems = systemItems(includeMathRule = true),
             userItems = userItems(),
             assistantItems = assistantItems(),
         )
+
+    /** The built-in default as shipped before the math delimiter rule was added. */
+    internal fun versionBeforeMathRuleForMigration(
+        locale: Locale = Locale.getDefault(),
+    ): SystemPromptEntry = SystemPromptEntry(
+        title = titleForLocale(locale),
+        systemItems = systemItems(includeMathRule = false),
+        userItems = userItems(),
+        assistantItems = assistantItems(),
+    )
 
     internal fun previousVersionForMigration(
         locale: Locale = Locale.getDefault(),
@@ -63,7 +76,8 @@ object DefaultSystemPrompt {
 
     internal fun isUnmodifiedPreviousVersion(entry: SystemPromptEntry): Boolean =
         (entry.title in BUILT_IN_TITLES || entry.title.equals(ENGLISH_TITLE, ignoreCase = true)) &&
-            entry.sameTemplateAs(previousVersionForMigration())
+            (entry.sameTemplateAs(previousVersionForMigration()) ||
+                entry.sameTemplateAs(versionBeforeMathRuleForMigration()))
 
     private fun SystemPromptEntry.sameTemplateAs(other: SystemPromptEntry): Boolean =
         resolvedSystemItems.sameTemplateItems(other.resolvedSystemItems) &&
@@ -76,7 +90,9 @@ object DefaultSystemPrompt {
         left.type == right.type && left.value == right.value
     }
 
-    private fun systemItems(): List<PromptTemplateItem> = listOf(
+    // [includeMathRule] = false reproduces the exact text of the version shipped before the math
+    // delimiter rule, so unmodified copies of that version can still be recognized and upgraded.
+    private fun systemItems(includeMathRule: Boolean): List<PromptTemplateItem> = listOf(
         custom(
             """
             You are a helpful assistant in Agora.
@@ -85,9 +101,9 @@ object DefaultSystemPrompt {
             If the request is unclear, ask a focused clarifying question before answering.
             Do not claim access to tools, files, real-time data, or app capabilities unless Agora has made them available for the current request.
             Use Markdown when it improves readability.
-
-            <active_memory_context>
-            """.trimIndent() + "\n"
+            """.trimIndent() + "\n" +
+                (if (includeMathRule) MATH_DELIMITER_RULE + "\n" else "") +
+                "\n<active_memory_context>\n"
         ),
         variable(PredefinedVariables.ACTIVE_MEMORY),
         custom(

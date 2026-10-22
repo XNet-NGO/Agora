@@ -77,6 +77,7 @@ internal class GenerationToolExecutor private constructor(
             "file_read",
             "file_write",
             "file_edit",
+            "file_multi_edit",
             "file_glob",
             "file_grep",
             "view_image",
@@ -90,6 +91,7 @@ internal class GenerationToolExecutor private constructor(
             sandboxFactory: SandboxManagerFactory?,
             additionalProviders: List<ToolProvider>,
             confirmShellCommand: suspend (server: String, summary: String, conversationId: String?) -> Boolean,
+            generatingConversationIds: () -> Set<String> = { emptySet() },
         ): GenerationToolExecutor {
             val imageGenProvider = ImageGenToolProvider(app) { conversationId ->
                 conversations.getLatestImagePath(conversationId)
@@ -102,10 +104,11 @@ internal class GenerationToolExecutor private constructor(
             }
             return GenerationToolExecutor(
                 providers = listOf(
+                    com.newoether.agora.tool.TodoToolProvider(conversations),
                     MemoryToolProvider(memoryManager),
                     SkillToolProvider(skillManager),
                     WebSearchToolProvider(),
-                    RagToolProvider(conversations),
+                    RagToolProvider(conversations, generatingConversationIds),
                     DeviceToolProvider(app),
                     imageGenProvider,
                     shellProvider,
@@ -215,7 +218,8 @@ internal class GenerationToolExecutor private constructor(
             val attemptJob = Job()
             val attempt = CoroutineScope(currentCoroutineContext() + attemptJob).async {
                 var completedResult: ToolExecutionResult? = null
-                provider.executeEvents(call.name, completeArguments, call.context).collect { event ->
+                val context = call.context.copy(toolEffectIdentity = call.batchIdentity)
+                provider.executeEvents(call.name, completeArguments, context).collect { event ->
                     if (event is ToolExecutionEvent.Completed) {
                         completedResult = event.result
                     }
@@ -258,10 +262,11 @@ internal class GenerationToolExecutor private constructor(
 internal fun toolExecutionTimeoutMs(
     toolName: String,
     defaultTimeoutMs: Long,
-): Long = if (toolName == "generate_image") {
-    Constants.IMAGE_GENERATION_TIMEOUT_MS
-} else {
-    defaultTimeoutMs
+): Long = when (toolName) {
+    "generate_image" -> Constants.IMAGE_GENERATION_TIMEOUT_MS
+    // Ask User owns one configured deadline for its whole question set.
+    "ask_user" -> Long.MAX_VALUE
+    else -> defaultTimeoutMs
 }
 
 internal fun appendBoundedToolOutput(

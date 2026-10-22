@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="embedding_import_title">匯入嵌入模型 (.gguf)</string>
+    <string name="embedding_import_desc">匯入 GGUF 嵌入模型，用於本機語意搜尋</string>
+    <string name="local_chat_import_title">匯入聊天模型 (.gguf)</string>
+    <string name="local_chat_import_desc">匯入 GGUF 聊天模型，在裝置上執行對話</string>
+    <string name="local_projector_import_title">匯入視覺投影器 (.mmproj)</string>
+</resources>

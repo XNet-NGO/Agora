@@ -102,7 +102,7 @@ class ShellToolProviderTest {
             )
         )
         val defs = provider.definitions(ctx)
-        assertEquals(12, defs.size)
+        assertEquals(13, defs.size)
         val names = defs.map { it.function.name }.toSet()
         assertEquals(
             setOf(
@@ -115,6 +115,7 @@ class ShellToolProviderTest {
                 "file_read",
                 "file_write",
                 "file_edit",
+                "file_multi_edit",
                 "file_glob",
                 "file_grep",
                 "view_image",
@@ -125,6 +126,12 @@ class ShellToolProviderTest {
         assertTrue(command.function.parameters.properties.containsKey("background"))
         val getJob = defs.single { it.function.name == "get_shell_job" }
         assertEquals(listOf("job_id"), getJob.function.parameters.required)
+        val edit = defs.single { it.function.name == "file_edit" }.function.parameters
+        assertTrue("edits" !in edit.properties)
+        assertTrue(edit.required.containsAll(listOf("old_string", "new_string")))
+        val multi = defs.single { it.function.name == "file_multi_edit" }.function.parameters
+        assertTrue(listOf("old_string", "new_string", "replace_all").none { it in multi.properties })
+        assertTrue("edits" in multi.required)
     }
 
     @Test
@@ -242,10 +249,12 @@ class ShellToolProviderTest {
                     arguments,
                     ctx,
                 ).toList()
-                val streamed = (events.single() as ToolExecutionEvent.Completed).result.text
+                val streamed = (events.single() as ToolExecutionEvent.Completed).result
 
                 assertTrue(oneShot.contains(expected))
-                assertEquals(oneShot, streamed)
+                // The model gets plain text; the JSON envelope rides along as structured content.
+                assertEquals(oneShot, streamed.structuredContent)
+                assertTrue(streamed.text.startsWith("error: $expected"))
             }
 
             val oversizedCommand = "界".repeat(SHELL_COMMAND_MAX_BYTES / 3 + 1)
@@ -528,6 +537,7 @@ class ShellToolProviderTest {
         assertTrue(provider.handles("file_read"))
         assertTrue(provider.handles("file_write"))
         assertTrue(provider.handles("file_edit"))
+        assertTrue(provider.handles("file_multi_edit"))
         assertTrue(provider.handles("file_glob"))
         assertTrue(provider.handles("file_grep"))
         assertTrue(provider.handles("view_image"))

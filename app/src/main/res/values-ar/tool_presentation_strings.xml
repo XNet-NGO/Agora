@@ -219,4 +219,5 @@
         <item quantity="many">عدد نتائج البحث: %1$d</item>
         <item quantity="other">عدد نتائج البحث: %1$d</item>
     </plurals>
+    <string name="tool_json_empty_container">لا يوجد محتوى</string>
 </resources>

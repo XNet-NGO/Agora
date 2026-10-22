@@ -514,7 +514,8 @@ internal fun terminalShellJobAcknowledgements(
 ): List<TerminalShellJobAcknowledgement> = calls.mapNotNull { call ->
     if (call.toolName !in ACKNOWLEDGEABLE_SHELL_TOOLS) return@mapNotNull null
     val envelope = runCatching {
-        Json.parseToJsonElement(call.result).jsonObject
+        // Shell tools hand the model plain text; the JSON envelope is the structured result.
+        Json.parseToJsonElement(call.structuredResult ?: call.result).jsonObject
     }.getOrNull() ?: return@mapNotNull null
     val nested = envelope["result"] as? JsonObject
     val state = nested.stringValue("state") ?: envelope.stringValue("state")

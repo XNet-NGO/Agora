@@ -4,6 +4,7 @@ import com.newoether.agora.api.ToolDefinition
 import com.newoether.agora.api.ToolFunction
 import com.newoether.agora.api.ToolParameters
 import com.newoether.agora.api.ToolProperty
+import com.newoether.agora.data.normalizeAskUserTimeoutMinutes
 import com.newoether.agora.viewmodel.AskUserController
 import com.newoether.agora.viewmodel.GenerationContext
 import kotlinx.serialization.json.Json
@@ -23,8 +24,8 @@ import kotlinx.serialization.json.putJsonArray
  * the question and the answer returns here.
  *
  * A blocking call suspends until the user answers or skips, so the answer is part of this tool
- * result and the model never has to guess what was chosen. There is no timeout; the user decides
- * when the question is answered, and stopping the generation is what ends an unwanted wait.
+ * result and the model never has to guess what was chosen. The configured timeout covers the
+ * whole question set and preserves submitted answers while leaving remaining items unanswered.
  *
  * A non-blocking call returns as soon as the question is on screen and the model keeps working. The
  * answer then arrives as a queued user message, so it needs a conversation to arrive in.
@@ -146,7 +147,8 @@ class AskUserToolProvider(private val askUser: AskUserController) : ToolProvider
         }
         if (!blocking) return queuedResult(requests.size)
         return try {
-            val answers = requests.map { askUser.awaitAnswer(it) }
+            val timeoutMs = normalizeAskUserTimeoutMinutes(ctx.askUserTimeoutMinutes) * 60_000L
+            val answers = askUser.awaitAnswers(requests, timeoutMs)
             if (answers.size == 1) singleResult(answers.first()) else groupResult(questions, answers)
         } finally {
             // Whatever is still waiting belongs to a wait that no longer exists, either because the

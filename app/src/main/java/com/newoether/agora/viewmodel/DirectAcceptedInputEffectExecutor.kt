@@ -214,6 +214,7 @@ internal class DirectAcceptedInputEffectExecutor(
         try {
             markStage(if (request.alreadyHoldsLock) "lock-already-owned" else "await-conversation-lock")
             withOptionalLock(request.conversationId, request.alreadyHoldsLock) generationLock@ {
+                if (!state.acquireGenerationAdmission(request.uiToken, executionCoordinator)) return@generationLock
                 markStage("resolve-generation-snapshot")
                 val generationSnapshot = request.generationSnapshot
                     ?: requestBuilder.captureAdmissionSnapshot(

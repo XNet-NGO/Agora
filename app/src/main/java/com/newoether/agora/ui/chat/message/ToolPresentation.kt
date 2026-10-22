@@ -48,6 +48,13 @@ internal enum class ToolKind {
     LOOP_START,
     LOOP_STOP,
     ASK_USER,
+    TODO_READ,
+    TODO_UPDATE,
+    SUBAGENT_SPAWN,
+    SUBAGENT_SEND,
+    SUBAGENT_WAIT,
+    SUBAGENT_LIST,
+    SUBAGENT_STOP,
     MCP,
     UNKNOWN,
 }
@@ -125,7 +132,26 @@ internal object ToolPresentationResolver {
 
     fun kindForToolName(toolName: String?): ToolKind = kindFor(toolName.orEmpty())
 
+    private const val RESOLVED_CACHE_SIZE = 64
+
+    // Composition resolves every visible tool row on each stream snapshot. A finished segment no
+    // longer changes, so its presentation is computed once instead of re-parsing its result JSON.
+    private val resolvedFinished = object : LinkedHashMap<MessageSegment, ToolPresentation>(
+        RESOLVED_CACHE_SIZE, 0.75f, true,
+    ) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<MessageSegment, ToolPresentation>) =
+            size > RESOLVED_CACHE_SIZE
+    }
+
     fun resolve(segment: MessageSegment): ToolPresentation {
+        if (segment.toolResult == null) return compute(segment)
+        synchronized(resolvedFinished) { resolvedFinished[segment] }?.let { return it }
+        val presentation = compute(segment)
+        synchronized(resolvedFinished) { resolvedFinished[segment] = presentation }
+        return presentation
+    }
+
+    private fun compute(segment: MessageSegment): ToolPresentation {
         val toolName = segment.toolName.orEmpty()
         val malformed = malformedCallOriginals(toolName, segment.toolArgs)
         val kind = kindFor(toolName)
@@ -174,6 +200,7 @@ internal object ToolPresentationResolver {
             kind = kind,
             rawResult = segment.toolResult.orEmpty(),
             result = resultObject,
+            value = resultElement,
             count = count,
             errorCode = errorCode,
         )
@@ -286,7 +313,7 @@ internal object ToolPresentationResolver {
         "stop_shell_job" -> ToolKind.SHELL_JOB_STOP
         "file_read" -> ToolKind.FILE_READ
         "file_write" -> ToolKind.FILE_WRITE
-        "file_edit" -> ToolKind.FILE_EDIT
+        "file_edit", "file_multi_edit" -> ToolKind.FILE_EDIT
         "file_glob" -> ToolKind.FILE_GLOB
         "file_grep" -> ToolKind.FILE_GREP
         "view_image" -> ToolKind.IMAGE_VIEW
@@ -297,6 +324,13 @@ internal object ToolPresentationResolver {
         "start_loop" -> ToolKind.LOOP_START
         "stop_loop" -> ToolKind.LOOP_STOP
         "ask_user" -> ToolKind.ASK_USER
+        "read_todo" -> ToolKind.TODO_READ
+        "update_todo" -> ToolKind.TODO_UPDATE
+        "spawn_agent" -> ToolKind.SUBAGENT_SPAWN
+        "send_agent_message" -> ToolKind.SUBAGENT_SEND
+        "wait_agents" -> ToolKind.SUBAGENT_WAIT
+        "list_agents" -> ToolKind.SUBAGENT_LIST
+        "stop_agent" -> ToolKind.SUBAGENT_STOP
         else -> if (name.startsWith("mcp_")) ToolKind.MCP else ToolKind.UNKNOWN
     }
 
@@ -354,6 +388,7 @@ internal object ToolPresentationResolver {
         kind: ToolKind,
         rawResult: String,
         result: JsonObject?,
+        value: JsonElement?,
         count: Int?,
         errorCode: String?,
     ): Boolean {
@@ -361,6 +396,8 @@ internal object ToolPresentationResolver {
         if (count != null && count == 0) return true
         if (errorCode == "no_results") return true
         return when (kind) {
+            ToolKind.TODO_READ, ToolKind.SUBAGENT_LIST -> (value as? JsonArray)?.isEmpty() == true
+            ToolKind.SUBAGENT_WAIT -> result.array("results")?.isEmpty() == true
             ToolKind.FILE_READ -> result.string("content").isNullOrEmpty()
             else -> false
         }

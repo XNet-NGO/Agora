@@ -1,12 +1,20 @@
 package com.newoether.agora.webui
 
 import android.content.res.Resources
+import com.newoether.agora.model.subagentResultDisplay
 import com.newoether.agora.R
 import com.newoether.agora.data.local.DrawerConversationRow
+import com.newoether.agora.api.util.ContextTokenEstimator
 import com.newoether.agora.model.ChatMessage
 import com.newoether.agora.model.MessageSegment
 import com.newoether.agora.model.Participant
 import com.newoether.agora.model.isContextCompact
+import com.newoether.agora.model.citationRecords
+import com.newoether.agora.model.copyTextWithCitations
+import com.newoether.agora.ui.chat.message.citationMarkdownProjection
+import com.newoether.agora.ui.chat.message.citationRecordsForAnswerSlice
+import com.newoether.agora.model.CitationRecord
+import com.newoether.agora.model.CitationPolicy
 import com.newoether.agora.ui.chat.message.AssistantContentPresentation
 import com.newoether.agora.ui.chat.message.AssistantInlineActivityMode
 import com.newoether.agora.ui.chat.message.TimelineBlock
@@ -41,9 +49,11 @@ internal data class WebDisplayContext(
     val autoWrapCodeBlocks: Boolean,
     val blurEffectsEnabled: Boolean = true,
     val reduceMotion: Boolean = false,
+    val stickToBottom: Boolean = true,
     /** The phone's model aliases and provider-name visibility, for MessageInfoDialog's model line. */
     val modelAliases: Map<String, String> = emptyMap(),
     val modelProviderNames: Map<String, Boolean> = emptyMap(),
+    val subagentCapsuleDisplayMode: String = com.newoether.agora.data.SubagentCapsuleDisplayModes.DEFAULT,
 ) {
     /** Settings plus the live timer templates; the browser formats the running seconds. */
     fun toEvent() = WebSyncEvent.Display(
@@ -53,6 +63,8 @@ internal data class WebDisplayContext(
         autoWrapCodeBlocks = autoWrapCodeBlocks,
         blurEffectsEnabled = blurEffectsEnabled,
         reduceMotion = reduceMotion,
+        stickToBottom = stickToBottom,
+        subagentCapsuleDisplayMode = subagentCapsuleDisplayMode,
         liveThinking = WebLiveTimerStrings(
             seconds = resources.getString(R.string.thinking_for_seconds_ellipsis),
             minutes = resources.getString(R.string.thinking_for_minutes_ellipsis),
@@ -70,7 +82,9 @@ internal fun webPresentation(
     isStreaming: Boolean,
     display: WebDisplayContext,
 ): WebPresentation? {
-    if (message.participant != Participant.MODEL && message.participant != Participant.ERROR) {
+    if (message.participant != Participant.MODEL && message.participant != Participant.ERROR &&
+        !message.isContextCompact()
+    ) {
         return null
     }
     val resources = display.resources
@@ -98,7 +112,7 @@ internal fun webPresentation(
         compact = if (presentation.compactVisible) projector.compact() else null,
         answer = answerBody
             .takeIf { !presentation.useTimelineSegments && it.isNotEmpty() }
-            ?.toWebText(display.parseInlineDollarMath),
+            ?.webCitationText(message.citationRecords(), isStreaming, display),
         inlineTerminalText = presentation.inlineTerminalText(
             message = message,
             isStreaming = isStreaming,
@@ -109,6 +123,11 @@ internal fun webPresentation(
         stoppedBar = presentation.showsStoppedBar(message, isStreaming),
         inlineActivity = presentation.inlineActivity(message),
         answerTailVisible = shouldShowStreamingTailIndicator(isStreaming, false, message),
+        compactDetailErrorText = presentation.errorContent?.errorText?.takeIf { message.isContextCompact() },
+        sources = message.citationRecords().map { it.toWebCitation() },
+        sourcesTitle = "${message.citationRecords().size} ${resources.getString(R.string.citation_sources)}",
+        sourcesLabel = resources.getString(R.string.citation_sources),
+        copyText = message.copyTextWithCitations(),
     )
 }
 
@@ -144,7 +163,11 @@ private class WebPresentationProjector(
     fun block(block: TimelineBlock): WebTimelineBlock = when (block) {
         is TimelineBlock.Answer -> WebTimelineBlock.Answer(
             index = block.index,
-            text = block.segment.content.toWebText(display.parseInlineDollarMath),
+            text = block.segment.content.webCitationText(
+                citationRecordsForAnswerSlice(message.citationRecords(), block.answerOffset, block.segment.content),
+                isStreaming,
+                display,
+            ),
             streaming = block.isStreaming,
             sourceStart = block.answerOffset,
             sourceLength = block.segment.content.length,
@@ -247,6 +270,42 @@ private class WebPresentationProjector(
     )
 }
 
+private fun CitationRecord.toWebCitation() = WebCitation(
+    id = sourceId, title = title, url = com.newoether.agora.model.CitationPolicy.safeHttpUrl(url),
+    fileName = fileName, location = location, excerpt = excerpt ?: anchors.firstOrNull()?.citedText,
+)
+
+private fun String.webCitationText(
+    sources: List<CitationRecord>,
+    streaming: Boolean,
+    display: WebDisplayContext,
+): WebText {
+    val projection = citationMarkdownProjection(this, sources, streaming, includeSourcePositions = true)
+        ?: return toWebText(display.parseInlineDollarMath)
+    val text = projection.markdown.toWebText(display.parseInlineDollarMath)
+    val sourceMap = buildList {
+        var boundary = 0
+        var projectedDelta = 0
+        var previousDelta = 0
+        for (index in 0..text.markdown.length) {
+            while (boundary < text.sourceMap.size && text.sourceMap[boundary][0] <= index) {
+                projectedDelta = text.sourceMap[boundary][1] - text.sourceMap[boundary][0]
+                boundary++
+            }
+            val original = projection.sourcePositions.getOrNull(index + projectedDelta) ?: this@webCitationText.length
+            if (original - index != previousDelta) {
+                add(listOf(index, original))
+                previousDelta = original - index
+            }
+        }
+    }
+    return text.copy(sourceMap = sourceMap, citations = projection.markers.map { marker ->
+        WebCitationMarker(marker.token.toString(), marker.label, marker.sources.map { it.toWebCitation() },
+            if (marker.sources.size > 1) "${marker.sources.size} ${display.resources.getString(R.string.citation_sources)}: ${marker.label}"
+            else display.resources.getString(R.string.citation_source_accessibility, marker.number, marker.source.title))
+    })
+}
+
 @Serializable
 internal data class WebLiveTimerStrings(val seconds: String, val minutes: String, val hours: String)
 
@@ -267,6 +326,12 @@ internal data class WebPresentation(
     /** The phone's inline activity line for this turn; null when the turn draws none. */
     val inlineActivity: WebInlineActivity?,
     val answerTailVisible: Boolean = false,
+    /** Native terminal detail for the Compact sheet, independent from ordinary inline placement. */
+    val compactDetailErrorText: String? = null,
+    val sources: List<WebCitation> = emptyList(),
+    val sourcesTitle: String = "",
+    val sourcesLabel: String = "",
+    val copyText: String? = null,
 )
 
 /** Which line the phone draws under a generating turn, plus its label in retry mode. */
@@ -342,7 +407,23 @@ internal fun ChatMessage.toWebPathEntry(branch: com.newoether.agora.model.RunMes
     branchAnchorMessageId = branch?.branchAnchorMessageId,
 )
 
+/** Source text plus non-mirrored detail bodies; page loading is independent of Provider retention. */
+internal fun ChatMessage.webLoadTokens(): Int {
+    var total = ContextTokenEstimator.estimateText(text).toLong()
+    segments.orEmpty().forEach { segment ->
+        when (segment.type) {
+            "thought", "transcription" -> total += ContextTokenEstimator.estimateText(segment.content)
+            "tool" -> {
+                total += ContextTokenEstimator.estimateText(segment.toolArgs.orEmpty())
+                total += ContextTokenEstimator.estimateText(segment.toolResult.orEmpty())
+            }
+        }
+    }
+    return total.coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()
+}
+
 internal fun ChatMessage.toWeb(presentation: WebPresentation?, modelDisplay: String? = null) = WebMessage(
+    loadTokens = webLoadTokens(),
     id = id,
     parentId = parentId,
     participant = participant.name,
@@ -354,9 +435,13 @@ internal fun ChatMessage.toWeb(presentation: WebPresentation?, modelDisplay: Str
     text = WebText(text),
     presentation = presentation,
     compact = isContextCompact(),
-    // The kind name is already the wire spelling: task, loop, ask_user.
+    // The kind name is already the wire spelling: task, loop, ask_user, subagent.
     source = source?.let {
-        WebMessageSource(it.kind.name.lowercase(), it.askUser.map { item -> WebAskUserItem(item.question, item.answer) })
+        WebMessageSource(
+            kind = it.kind.name.lowercase(),
+            askUser = it.askUser.map { item -> WebAskUserItem(item.question, item.answer) },
+            subagentResult = it.subagentResultDisplay(text),
+        )
     },
     usage = tokenUsage?.let {
         val view = tokenUsagePresentation(it)

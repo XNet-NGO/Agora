@@ -5,6 +5,16 @@ Status: authoritative, 2026-08-14.
 This contract owns Agora's complete citation lifecycle. It applies to structured citations from
 Providers, compatible relays, supported conversation imports, durable message storage, streaming
 projection, message reload, copy/search/selection, and answer rendering.
+The WebUI follows this complete native contract as confirmed on 2026-10-14: Kotlin projects the
+canonical normalized citation records and Markdown presentation through its existing sync payload;
+the browser renders terminal inline/group capsules, the Sources summary and shared source sheet,
+safe URL and non-URL details, portable Copy output, and body-search metadata exclusion. It must not
+parse Provider-private dialects or become a second normalization, persistence or generation owner.
+The canonical Markdown projection optionally tracks original UTF-16 positions through citation
+insertion, wrapper replacement, grouping and private-marker removal. The WebUI composes that map
+with its existing math source map, so body search after a capsule keeps original message offsets.
+Inline placeholder expansion retains each remaining text leaf's position within its Markdown token;
+capsule labels never enter body-search ranges.
 
 Citation presentation is answer metadata. It is not Markdown syntax, ordinary answer text, a tool
 call, a tool result, or Provider-history content.
@@ -282,7 +292,9 @@ Changes touching citations must prove:
    complete ordered bottom-sheet contents, transparent rows with pill-clipped ripple, safe
    click/detail behavior, selection fallback, Copy output, and accessibility labels.
 7. Citation-title global search uses stable primary-key keyset pages and a bounded newest-first
-   top-K accumulator. It preserves limit/title-only semantics, handles equal timestamps without
+   top-K accumulator. The SQL drives from messages with its id seek before joining conversations;
+   query-plan tests prevent a per-page eligible-corpus scan and temporary ORDER BY sort. It preserves
+   limit/title-only semantics, handles equal timestamps without
    gaps or duplicates, and never loads or decodes the whole citation corpus at once. A no-match
    query may scan all bounded pages; a future title index requires a separately reviewed migration.
 8. Complete scoped diff review, `git diff --check`, focused tests, the project full build, and

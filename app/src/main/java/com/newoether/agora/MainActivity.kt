@@ -341,6 +341,8 @@ fun MainNavigation(
     var taskToOpen by remember { mutableStateOf<String?>(null) }
     val taskHistoryPreview = taskEditorSession.historyPreview
     val currentConversationId by viewModel.currentConversationId.collectAsState()
+    val selectedConversation by viewModel.currentConversation.collectAsState()
+    val subagentParentId = selectedConversation?.takeIf { it.id == currentConversationId }?.parentConversationId
     val isNewChatMode by viewModel.isNewChatMode.collectAsState()
     val isConversationSwitching by viewModel.isSwitching.collectAsState()
     com.newoether.agora.ui.tasks.TaskHistoryDestinationEffect(
@@ -467,7 +469,9 @@ fun MainNavigation(
             ChatApp(
                 viewModel = viewModel,
                 initialComposerFocusReady = initialComposerFocusReady,
-                onNavigateBack = taskHistoryPreview.backTaskId(currentConversationId, isNewChatMode)
+                onNavigateBack = subagentParentId?.takeIf { !isNewChatMode }?.let { parent ->
+                    { viewModel.selectConversation(parent); Unit }
+                } ?: taskHistoryPreview.backTaskId(currentConversationId, isNewChatMode)
                     ?.let { taskId ->
                         {
                             taskToOpen = taskId

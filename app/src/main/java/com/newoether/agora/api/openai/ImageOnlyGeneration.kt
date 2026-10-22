@@ -52,38 +52,6 @@ private fun dataUrl(bytes: ByteArray): String {
 }
 
 /**
- * Mid-stream retry dedup: some gateways restart the stream from the beginning after a
- * mid-stream cut. [attemptText] accumulates the current attempt's answer; anything the
- * consumer already saw from earlier attempts (tracked in [emittedText]) is suppressed so
- * the retry cannot duplicate output. First-attempt chunks pass through untouched.
- */
-internal fun retryDedupEmitter(
-    attempt: Int,
-    emittedText: StringBuilder,
-    attemptText: StringBuilder,
-    emit: suspend (StreamEvent) -> Unit,
-): suspend (StreamEvent) -> Unit = { event ->
-    when {
-        event is StreamEvent.TextChunk && attempt > 1 -> {
-            attemptText.append(event.text)
-            val alreadyShown = emittedText.length
-            val chunkStart = attemptText.length - event.text.length
-            val keptLength = attemptText.length - maxOf(chunkStart, alreadyShown)
-            if (keptLength > 0) {
-                val kept = event.text.substring(event.text.length - keptLength)
-                emittedText.append(kept)
-                emit(StreamEvent.TextChunk(kept))
-            }
-        }
-        event is StreamEvent.TextChunk -> {
-            emittedText.append(event.text)
-            emit(event)
-        }
-        else -> emit(event)
-    }
-}
-
-/**
  * Direct-chat image generation for DashScope-family hosts. Calls the synchronous
  * multimodal-generation API (input.messages, single "user" turn) and emits the returned
  * image URL as a markdown answer chunk. Errors surface as provider API errors with the

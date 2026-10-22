@@ -68,11 +68,15 @@ internal fun ToolDetailContent(
     } else {
         Modifier
     }
-    presentation.arguments?.let { args ->
+    if (presentation.arguments != null || presentation.codeArgument != null) {
         Column(modifier = contentAlignmentModifier.fillMaxWidth()) {
             ToolSectionLabel(presentation.argumentsLabel)
             Spacer(Modifier.height(5.dp))
-            JsonOrPlainView(args)
+            presentation.arguments?.let { JsonOrPlainView(it) }
+            presentation.codeArgument?.let { code ->
+                if (presentation.arguments != null) Spacer(Modifier.height(8.dp))
+                ToolCodeArgument(code)
+            }
             Spacer(Modifier.height(18.dp))
         }
     }
@@ -134,6 +138,7 @@ internal fun ToolDetailContent(
             is ToolDetailBody.Paths -> FileGlobResult(body)
             is ToolDetailBody.Grep -> FileGrepResult(body)
             is ToolDetailBody.FileContent -> FileReadResult(body)
+            is ToolDetailBody.Edit -> FileEditResult(body)
             is ToolDetailBody.Search -> Unit
         }
     }
@@ -322,7 +327,7 @@ private fun ToolErrorContent(message: String) {
 }
 
 @Composable
-private fun ToolMutedContent(message: String) {
+internal fun ToolMutedContent(message: String) {
     Text(
         text = message,
         style = ChatType.metaNormal,
@@ -330,57 +335,6 @@ private fun ToolMutedContent(message: String) {
     )
 }
 
-
-@Composable
-private fun FileGlobResult(body: ToolDetailBody.Paths) {
-    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        body.values.forEachIndexed { index, path -> IndexedCodeLine(index + 1, path) }
-    }
-}
-
-@Composable
-private fun FileGrepResult(body: ToolDetailBody.Grep) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        body.groups.forEach { (path, pathMatches) ->
-            Text(
-                text = path,
-                style = ChatType.thoughtCodeLarge,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                pathMatches.forEach { match ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.Top,
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(5.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        ) {
-                            Text(
-                                text = match.line?.toString() ?: "\u2014",
-                                style = ChatType.meta,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            )
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        NoAutoScrollSelectionContainer(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = match.content,
-                                style = ChatType.thoughtCodeLarge,
-                                fontFamily = MonoFamily,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun ShellResult(body: ToolDetailBody.Shell) {
@@ -395,26 +349,9 @@ private fun ShellResult(body: ToolDetailBody.Shell) {
         Spacer(Modifier.height(8.dp))
         ToolErrorContent(it)
     }
-    Spacer(Modifier.height(8.dp))
-    TerminalOutput(body.output)
-}
-
-@Composable
-private fun FileReadResult(body: ToolDetailBody.FileContent) {
-    if (body.path != null || body.lineCount != null) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            body.path?.let { MetaPill(it, modifier = Modifier.weight(1f, fill = false)) }
-            body.lineCount?.let { MetaPill(it) }
-        }
+    body.output?.let {
         Spacer(Modifier.height(8.dp))
-    }
-    if (body.content.isEmpty()) ToolMutedContent(body.emptyText) else TerminalOutput(body.content)
-    body.truncationText?.let {
-        Spacer(Modifier.height(8.dp))
-        ToolMutedContent(it)
+        TerminalOutput(it)
     }
 }
 
@@ -479,27 +416,7 @@ private fun WebSearchResult(
 }
 
 @Composable
-private fun IndexedCodeLine(index: Int, text: String) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-        Text(
-            text = index.toString(),
-            style = ChatType.meta,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
-            modifier = Modifier.width(28.dp),
-        )
-        NoAutoScrollSelectionContainer(modifier = Modifier.weight(1f)) {
-            Text(
-                text = text,
-                style = ChatType.thoughtCodeLarge,
-                fontFamily = MonoFamily,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-    }
-}
-
-@Composable
-private fun TerminalOutput(output: String) {
+internal fun TerminalOutput(output: String) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f),
         shape = RoundedCornerShape(10.dp),
@@ -518,7 +435,7 @@ private fun TerminalOutput(output: String) {
 }
 
 @Composable
-private fun MetaPill(
+internal fun MetaPill(
     text: String,
     emphasized: Boolean = false,
     modifier: Modifier = Modifier,

@@ -7,13 +7,30 @@ data class EmbeddingModelCount(
     val count: Int,
 )
 
+internal const val CITATION_MESSAGE_PAGE_QUERY = """
+    SELECT m.*
+    FROM messages m
+    CROSS JOIN conversations c
+    WHERE m.conversationId = c.id
+      AND c.taskId IS NULL
+      AND c.parentConversationId IS NULL
+      AND m.toolCallJson LIKE '%"type":"citation"%'
+      AND m.participant = 'MODEL'
+      AND substr(m.id, 1, 5) != 'tool_'
+      AND substr(m.id, 1, 7) != 'result_'
+      AND m.id > :afterId
+    ORDER BY m.id ASC
+    LIMIT :pageSize
+"""
+
 /** Search eligibility and bounded projections inherited by the sole [ChatDao]. */
 interface ChatSearchDao {
     /** [query] must be pre-escaped for LIKE (see ConversationRepository.escapeLikePattern). */
-    @Query("SELECT m.* FROM messages m INNER JOIN conversations c ON m.conversationId = c.id WHERE c.taskId IS NULL AND (m.text LIKE '%' || :query || '%' ESCAPE '\\' OR c.title LIKE '%' || :query || '%' ESCAPE '\\') AND m.participant IN ('USER', 'MODEL') AND m.text != '' AND substr(m.id, 1, 5) != 'tool_' AND substr(m.id, 1, 7) != 'result_' AND substr(m.id, 1, 8) != 'compact_' ORDER BY m.timestamp DESC, m.id DESC LIMIT :limit")
+    @Query("SELECT m.* FROM messages m INNER JOIN conversations c ON m.conversationId = c.id WHERE c.taskId IS NULL AND c.parentConversationId IS NULL AND (m.text LIKE '%' || :query || '%' ESCAPE '\\' OR c.title LIKE '%' || :query || '%' ESCAPE '\\') AND m.participant IN ('USER', 'MODEL') AND m.text != '' AND substr(m.id, 1, 5) != 'tool_' AND substr(m.id, 1, 7) != 'result_' AND substr(m.id, 1, 8) != 'compact_' ORDER BY m.timestamp DESC, m.id DESC LIMIT :limit")
     suspend fun searchMessages(query: String, limit: Int = 10): List<MessageEntity>
 
-    @Query("SELECT m.* FROM messages m INNER JOIN conversations c ON m.conversationId = c.id WHERE c.taskId IS NULL AND m.toolCallJson LIKE '%\"type\":\"citation\"%' AND m.participant = 'MODEL' AND substr(m.id, 1, 5) != 'tool_' AND substr(m.id, 1, 7) != 'result_' AND m.id > :afterId ORDER BY m.id ASC LIMIT :pageSize")
+    // Keep messages first so each page seeks its primary key instead of sorting the corpus again.
+    @Query(CITATION_MESSAGE_PAGE_QUERY)
     suspend fun getMessagesWithCitationSegmentsPage(
         afterId: String,
         pageSize: Int,
@@ -30,6 +47,7 @@ interface ChatSearchDao {
           AND e.modelId = :modelId
           AND e.id > :afterId
           AND c.taskId IS NULL
+          AND c.parentConversationId IS NULL
           AND m.participant IN ('USER', 'MODEL')
           AND LENGTH(m.text) >= :minimumTextLength
           AND m.id NOT LIKE 'tool_%'
@@ -106,24 +124,24 @@ interface ChatSearchDao {
         limit: Int,
     ): List<IndexableMessage>
 
-    @Query("SELECT m.* FROM messages m INNER JOIN conversations c ON m.conversationId = c.id WHERE m.id IN (:ids) AND c.taskId IS NULL AND m.participant IN ('USER', 'MODEL') AND m.text != '' AND m.id NOT LIKE 'tool_%' AND m.id NOT LIKE 'result_%' AND m.id NOT LIKE 'compact_%'")
+    @Query("SELECT m.* FROM messages m INNER JOIN conversations c ON m.conversationId = c.id WHERE m.id IN (:ids) AND c.taskId IS NULL AND c.parentConversationId IS NULL AND m.participant IN ('USER', 'MODEL') AND m.text != '' AND m.id NOT LIKE 'tool_%' AND m.id NOT LIKE 'result_%' AND m.id NOT LIKE 'compact_%'")
     suspend fun getSearchableMessagesByIds(ids: List<String>): List<MessageEntity>
 
     @Query("SELECT EXISTS(SELECT 1 FROM messages m INNER JOIN conversations c ON m.conversationId = c.id WHERE m.id = :messageId AND c.taskId IS NULL AND m.participant IN ('USER', 'MODEL') AND m.text != '' AND m.id NOT LIKE 'tool_%' AND m.id NOT LIKE 'result_%' AND m.id NOT LIKE 'compact_%')")
     suspend fun isMessageSearchable(messageId: String): Boolean
 
-    @Query("SELECT * FROM conversations WHERE id = :conversationId AND taskId IS NULL")
-    suspend fun getSearchableConversation(conversationId: String): ChatEntity?
+    @Query("SELECT * FROM conversations WHERE id = :conversationId AND taskId IS NULL AND (parentConversationId IS NULL OR parentConversationId = :ownerConversationId)")
+    suspend fun getSearchableConversation(conversationId: String, ownerConversationId: String? = null): ChatEntity?
 
 
-    @Query("SELECT COUNT(*) FROM conversations WHERE taskId IS NULL")
+    @Query("SELECT COUNT(*) FROM conversations WHERE taskId IS NULL AND parentConversationId IS NULL")
     suspend fun getSearchableConversationCount(): Int
 
     @Query(
         """
         SELECT *
         FROM conversations
-        WHERE taskId IS NULL
+        WHERE taskId IS NULL AND parentConversationId IS NULL
         ORDER BY lastUpdated ASC, id ASC
         LIMIT :limit OFFSET :offset
         """
@@ -137,7 +155,7 @@ interface ChatSearchDao {
         """
         SELECT *
         FROM conversations
-        WHERE taskId IS NULL
+        WHERE taskId IS NULL AND parentConversationId IS NULL
         ORDER BY lastUpdated DESC, id DESC
         LIMIT :limit OFFSET :offset
         """

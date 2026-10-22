@@ -91,7 +91,7 @@ class Migration36To37Test {
         assertTrue(schema.contains("\"version\": 37"))
         assertTrue(schema.contains("document_embeddings"))
         assertTrue(database.contains("MIGRATION_36_37,"))
-        assertTrue(database.contains("CURRENT_VERSION = 37"))
+        assertTrue(database.contains("CURRENT_VERSION = 40"))
     }
 
     private fun locateRepositoryRoot(): File {

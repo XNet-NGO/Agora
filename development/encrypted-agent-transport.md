@@ -11,6 +11,9 @@ Conch and Filo must validate the complete authenticated request before native wo
 An unsigned HTTP error cannot prove non-execution or authorize a mutating retry.
 Encrypted streams must authenticate event kind and sequence as well as bytes. Missing,
 duplicated, reordered, cross-request and post-terminal frames cannot become success.
+Authenticated `http_end` is necessary but not sufficient: the reader also confirms
+HTTP response-body EOF before returning successful EOF. A second terminal frame,
+any trailing frame or garbage bytes is an error in both Go and Android clients.
 Neither redirects nor a connection failure may transparently replay a command.
 Encrypted file/job responses also require the server response HMAC, using a distinct
 HKDF subkey of the request's fresh session key and binding status and ciphertext.

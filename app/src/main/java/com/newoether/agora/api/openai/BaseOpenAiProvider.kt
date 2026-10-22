@@ -158,7 +158,7 @@ abstract class BaseOpenAiProvider : LlmProvider {
                             },
                         serviceTier = config.openAiServiceTier,
                         temperature = config.temperature,
-                        maxOutputTokens = config.maxTokens,
+                        maxOutputTokens = config.effectiveOpenAiMaxTokens(),
                         topP = config.topP,
                         promptCacheKey = config.promptCacheKey,
                     )
@@ -173,7 +173,7 @@ abstract class BaseOpenAiProvider : LlmProvider {
                         serviceTier = config.openAiServiceTier,
                         tools = tools,
                         temperature = config.temperature,
-                        maxTokens = config.maxTokens,
+                        maxTokens = config.effectiveOpenAiMaxTokens(),
                         topP = config.topP,
                         frequencyPenalty = config.frequencyPenalty,
                         presencePenalty = config.presencePenalty,
@@ -201,9 +201,6 @@ abstract class BaseOpenAiProvider : LlmProvider {
             val maxAttempts = ProviderRetryPolicy.MAX_ATTEMPTS
             var attempt = 0
             var finished = false
-            // Answer text already shown to the consumer across retry attempts (see the retry
-            // dedup wrapper inside the loop).
-            val emittedText = StringBuilder()
 
             while (attempt < maxAttempts && !finished) {
                 attempt++
@@ -283,12 +280,10 @@ abstract class BaseOpenAiProvider : LlmProvider {
                             // completed is decided from semantic markers below, so a relay that
                             // cuts the stream at a content-block boundary can no longer pass as a
                             // finished answer.
-                            val attemptText = StringBuilder()
-                            val dedupEmit = retryDedupEmitter(attempt, emittedText, attemptText) { emit(it) }
                             val termination = if (config.responsesApiEnabled) {
-                                consumeResponsesStream(handle, config, dedupEmit)
+                                consumeResponsesStream(handle, config) { emit(it) }
                             } else {
-                                consumeSuccessfulStream(handle, config, dedupEmit)
+                                consumeSuccessfulStream(handle, config) { emit(it) }
                             }
                             DebugLog.d(
                                 "AgoraSSE",
@@ -296,14 +291,20 @@ abstract class BaseOpenAiProvider : LlmProvider {
                                     "attempt=$attempt/$maxAttempts",
                             )
                             if (termination.isRetryable && attempt < maxAttempts) {
-                                // Already-shown content is tracked by emittedText; the dedup
-                                // wrapper suppresses replayed prefixes on the next attempt.
+                                // Consumers roll back only this attempt before the retry begins.
                                 DebugLog.w(
                                     "AgoraAPI",
                                     "[$name] Incomplete stream on attempt $attempt/$maxAttempts, retrying",
                                 )
                                 val retryDelayMs = retryDelayMillis(attempt)
-                                emit(StreamEvent.Retrying(attempt, ProviderRetryPolicy.MAX_RETRIES))
+                                emit(
+                                    StreamEvent.Retrying(
+                                        attempt,
+                                        ProviderRetryPolicy.MAX_RETRIES,
+                                        resetCurrentAttempt = termination.producedContent ||
+                                            ProviderRetryPolicy.requiresResponseReadRetry(termination.streamError),
+                                    ),
+                                )
                                 delay(retryDelayMs)
                                 retryScheduled = true
                             } else {
@@ -313,7 +314,10 @@ abstract class BaseOpenAiProvider : LlmProvider {
                         } else {
                             val errorRaw = handle.errorBody.orEmpty()
                             val hasV1Fallback = endpointIndex + 1 < endpointUrls.size
-                            if (hasV1Fallback) {
+                            if (hasV1Fallback &&
+                                !ProviderRetryPolicy.isResponseReadHttpFailure(handle.code, errorRaw) &&
+                                !ProviderRetryPolicy.isPermanentHttpFailure(handle.code, errorRaw)
+                            ) {
                                 DebugLog.w(
                                     "AgoraAPI",
                                     "[$name] HTTP ${handle.code}; trying endpoint candidate " +
@@ -387,6 +391,8 @@ abstract class BaseOpenAiProvider : LlmProvider {
                 handle.readLine()
             } catch (error: SocketTimeoutException) {
                 if (!currentCoroutineContext().isActive) break
+                responseBodyReadError = error.asRetryableResponseBodyReadError()
+                if (responseBodyReadError != null) break
                 if (++consecutiveReadTimeouts >= 3) {
                     timedOut = true
                     break
@@ -526,6 +532,8 @@ abstract class BaseOpenAiProvider : LlmProvider {
                 handle.readLine()
             } catch (e: SocketTimeoutException) {
                 if (!currentCoroutineContext().isActive) break
+                streamError = e.asRetryableResponseBodyReadError()
+                if (streamError != null) break
                 // A semantic terminal event already completed the model response. This timeout
                 // only closes its optional usage/[DONE] grace tail and is therefore success.
                 if (terminalDeadlineNanos != null) break
@@ -666,24 +674,6 @@ abstract class BaseOpenAiProvider : LlmProvider {
             alreadyReportedError = reportedError,
             timedOut = timedOut,
         )
-    }
-
-    private fun buildGenerationError(
-        statusCode: Int,
-        errorRaw: String,
-        endpointUrls: List<String>
-    ): GenerationError {
-        val endpointHint = if (statusCode == 404 && endpointUrls.size > 1) {
-            "\nTried ${endpointUrls.joinToString(" and ")}. OpenAI-compatible servers often require a /v1 Base URL."
-        } else {
-            ""
-        }
-        val error = providerHttpError(statusCode, errorRaw)
-        return if (endpointHint.isEmpty()) {
-            error
-        } else {
-            error.copy(message = error.message + endpointHint)
-        }
     }
 
     private fun fetchModelPages(

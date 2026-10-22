@@ -455,6 +455,8 @@ class AnthropicProvider(
                             consecutiveReadTimeouts = 0
                         } catch (e: java.net.SocketTimeoutException) {
                             if (!currentCoroutineContext().isActive) break
+                            responseBodyReadError = e.asRetryableResponseBodyReadError()
+                            if (responseBodyReadError != null) break
                             if (++consecutiveReadTimeouts >= 3) {
                                 timedOut = true
                                 break
@@ -517,11 +519,18 @@ class AnthropicProvider(
                     )
 
                     if (termination.isRetryable && attempt < maxAttempts) {
-                        // Nothing was surfaced yet, so replaying cannot duplicate visible output.
+                        // Consumers roll back only this attempt before the retry begins.
                         DebugLog.w("AgoraAPI",
                             "[$name] Incomplete stream on attempt $attempt/$maxAttempts, retrying")
                         val retryDelayMs = ProviderRetryPolicy.delayMillis(attempt)
-                        emit(StreamEvent.Retrying(attempt, ProviderRetryPolicy.MAX_RETRIES))
+                        emit(
+                            StreamEvent.Retrying(
+                                attempt,
+                                ProviderRetryPolicy.MAX_RETRIES,
+                                resetCurrentAttempt = termination.producedContent ||
+                                    ProviderRetryPolicy.requiresResponseReadRetry(termination.streamError),
+                            ),
+                        )
                         delay(retryDelayMs)
                     } else {
                         done = true
@@ -678,7 +687,8 @@ class AnthropicProvider(
         all
     }
 
-    private companion object {
+    // Internal so the OpenAI-compatible path can send the same default to Claude behind relays.
+    internal companion object {
         /**
          * Headroom reserved above the thinking budget for the answer AND any tool_use block.
          * Anthropic's max_tokens covers thinking + output together, so this slack is what keeps a

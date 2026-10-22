@@ -98,16 +98,15 @@ internal fun RemoteOverlay(
     SettingsOverlayHost(visible, onDismiss, onExitFinished = onExitFinished) {
         val hapticsEnabled by settings.hapticsEnabled.collectAsState(initial = false)
         CompositionLocalProvider(LocalAgoraHaptics provides rememberAgoraHaptics(hapticsEnabled && hapticsActive)) {
-            RemoteScreen(remote, settings, visible, onDismiss, onSnackbarOffsetChanged, onMediaClick, onMessage)
+            RemoteScreen(remote, settings, visible, onDismiss, onSnackbarOffsetChanged, onMediaClick)
         }
     }
 }
 
 @Composable
-private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, active: Boolean, onBack: () -> Unit,
+internal fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, active: Boolean, onBack: () -> Unit,
     onSnackbarOffsetChanged: (androidx.compose.ui.unit.Dp) -> Unit,
-    onMediaClick: (List<String>, Int) -> Unit,
-    onMessage: (String, String?, (() -> Unit)?) -> Unit) {
+    onMediaClick: (List<String>, Int) -> Unit) {
     val state by vm.state.collectAsState()
     val inset = maxOf(WindowInsets.ime.asPaddingValues().calculateBottomPadding(),
         WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())
@@ -125,7 +124,8 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
         }
     }
     BackHandler(active, back)
-    val target = Triple(state.deviceId, state.session?.let { "conversation" }, if (state.addingDevice) state.editedDeviceId.orEmpty() else null)
+    val target = Triple(state.deviceId, state.session?.let { "conversation" },
+        if (state.addingDevice) state.editedDeviceId.orEmpty() else null)
     Box(Modifier.fillMaxSize()) {
     GuardedAnimatedContent(targetState = target, forward = forward) { page ->
         var retained by remember(page) { mutableStateOf(state) }
@@ -133,10 +133,10 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
         SideEffect { if (current) retained = state }
         val displayed = if (current) state else retained
         when {
-            page.third != null -> RemoteAddDevice(displayed, vm, back) { forward = false; focus.clearFocus() }
-            page.second != null -> RemoteConversation(displayed, vm, settings, active && current, back, onSnackbarOffsetChanged, onMediaClick, onMessage)
+            page.third != null -> RemoteAddDevice(displayed, vm, active && current, back) { forward = false; focus.clearFocus() }
+            page.second != null -> RemoteConversation(displayed, vm, settings, active && current, back, onSnackbarOffsetChanged, onMediaClick)
             page.first != null -> {
-                var showUsage by remember(displayed.deviceId) { mutableStateOf(false) }
+                var showUsage by remember(displayed.deviceId, displayed.confirmationPath) { mutableStateOf(false) }
                 if (showUsage && current && active) RemoteUsageSheet(vm) { showUsage = false }
                 val listState = rememberLazyListState()
                 val visibleRows = remember { mutableStateMapOf<String, Boolean>() }
@@ -155,28 +155,37 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                 CollapsingSettingsLazyScaffold(
                     listState = listState,
                     contentBottomPadding = 104.dp,
-                    title = stringResource(R.string.remote_sessions), onBack = back,
+                    title = displayed.devices.firstOrNull { it.id == displayed.deviceId }?.name
+                        ?.ifBlank { null } ?: stringResource(R.string.remote_device), onBack = back,
                     actions = {
-                        IconButton(onClick = { showUsage = true }, enabled = current && active) {
+                        if (displayed.capabilities.usage) IconButton(onClick = { showUsage = true }, enabled = current && active) {
                             Icon(Icons.Default.DataUsage, stringResource(R.string.remote_usage))
                         }
                     },
                     floatingActionButton = {
-                        Box(Modifier.fillMaxWidth().padding(end = 24.dp, bottom = 8.dp), contentAlignment = Alignment.BottomEnd) {
+                        if (displayed.canCreate) Box(Modifier.fillMaxWidth().padding(end = 24.dp, bottom = 8.dp), contentAlignment = Alignment.BottomEnd) {
                             FloatingActionButton(modifier = Modifier.size(64.dp), shape = CircleShape, onClick = { if (current && active && !displayed.controlling) { forward = true; vm.newSession() } }) {
                                 Icon(Icons.Default.Add, stringResource(R.string.new_chat), Modifier.size(32.dp))
                             }
                         }
                     },
                 ) {
+                    item(key = "agents") {
+                        val sources = displayed.devices.firstOrNull { it.id == displayed.deviceId }?.let {
+                            if (it.multiAdapter) it.adapters else listOf(displayed.selectedAdapter)
+                        }.orEmpty()
+                        if (displayed.selectedAdapter.legacy) RemoteAgentChipRow(displayed.selectedAdapter.status)
+                        else RemoteAgentChipRow(sources, displayed.selectedAdapter.id, vm::selectAdapter,
+                            enabled = current && active)
+                    }
                     if (!displayed.loading && displayed.sessions.isEmpty() && !displayed.error) {
                         item { Text(stringResource(R.string.remote_empty), Modifier.padding(16.dp)) }
                     }
                     if (displayed.sessions.isNotEmpty()) item(key = "sessions") {
                         SettingsGroup(
-                            title = displayed.devices.firstOrNull { it.id == displayed.deviceId }?.name.orEmpty(),
+                            title = stringResource(R.string.remote_sessions),
                             items = displayed.sessions.map { session -> {
-                                key(session.id) {
+                                key(displayed.confirmationPath, session.id) {
                                     var showMenu by remember { mutableStateOf(false) }
                                     var action by remember { mutableStateOf<String?>(null) }
                                     val actionsEnabled = current && active && !displayed.controlling
@@ -196,12 +205,12 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                                         trailingContent = {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 RemoteSessionIndicator(resolveDrawerConversationIndicator(
-                                                    isGenerating = displayed.sessionStatuses["${displayed.deviceId}/${session.id}"]?.status == "active",
+                                                    isGenerating = displayed.sessionStatuses[displayed.sessionKey(session.id)]?.status == "active",
                                                     isSelected = false,
                                                     hasUnreadGeneration = displayed.hasUnreadGeneration(session.id),
                                                 ))
                                                 Box {
-                                                    IconButton(onClick = { showMenu = true }, enabled = actionsEnabled) {
+                                                    IconButton(onClick = { showMenu = true }, enabled = current && active) {
                                                         Icon(Icons.Default.MoreVert, stringResource(R.string.more))
                                                     }
                                                     AgoraDropdownMenu(
@@ -212,13 +221,13 @@ private fun RemoteScreen(vm: RemoteViewModel, settings: SettingsRepository, acti
                                                         AgoraDropdownMenuItem(
                                                             text = { Text(stringResource(R.string.rename)) },
                                                             leadingIcon = { Icon(Icons.Default.Edit, null) },
-                                                            enabled = actionsEnabled,
+                                                            enabled = actionsEnabled && displayed.capabilitiesFor(session).rename,
                                                             onClick = { showMenu = false; action = "rename" },
                                                         )
                                                         AgoraDropdownMenuItem(
                                                             text = { Text(stringResource(R.string.remote_archive), color = MaterialTheme.colorScheme.error) },
                                                             leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                                                            enabled = actionsEnabled,
+                                                            enabled = actionsEnabled && displayed.capabilitiesFor(session).archive,
                                                             onClick = { showMenu = false; action = "archive" },
                                                         )
                                                     }
@@ -289,7 +298,8 @@ private fun RemoteSessionIndicator(indicator: DrawerConversationIndicator) {
 }
 
 @Composable
-private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () -> Unit, onForward: () -> Unit) {
+private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () -> Unit,
+    onForward: () -> Unit) {
     var deleteId by remember { mutableStateOf<String?>(null) }
     val enabled = !state.restoring && !state.saving
     CollapsingSettingsScaffold(title = stringResource(R.string.remote_title), onBack = onBack) {
@@ -365,37 +375,57 @@ private fun RemoteDevices(state: RemoteState, vm: RemoteViewModel, onBack: () ->
 }
 
 @Composable
-private fun RemoteAddDevice(state: RemoteState, vm: RemoteViewModel, onBack: () -> Unit, onForward: () -> Unit) {
+internal fun RemoteAddDevice(state: RemoteState, vm: RemoteViewModel, active: Boolean, onBack: () -> Unit, onForward: () -> Unit) {
     val initial = remember { vm.editorConnection() }
     var name by remember { mutableStateOf(remoteDeviceName(initial?.name.orEmpty())) }
     var address by remember { mutableStateOf(initial?.address.orEmpty()) }
     var token by remember { mutableStateOf(initial?.token.orEmpty()) }
+    var guideVisible by remember { mutableStateOf(false) }
+    var closed by remember { mutableStateOf(false) }
+    val pageActive by rememberUpdatedState(active && LocalSettingsScrollRetentionActive.current)
+    SideEffect { if (!pageActive) closed = true }
+    fun ownsEntry() = pageActive && !closed
+    GuardedAnimatedContent(targetState = guideVisible, forward = guideVisible,
+        contentKey = { if (it) "filo-guide" else "editor" }) { guide ->
+        if (guide) SettingsFiloGuidePage(onBack = { if (ownsEntry()) guideVisible = false })
+        else {
+            val paneActive by rememberUpdatedState(LocalSettingsScrollRetentionActive.current)
+            var paneClosed by remember { mutableStateOf(false) }
+            SideEffect { if (!paneActive) paneClosed = true }
+            fun ownsEditor() = ownsEntry() && !guideVisible && paneActive && !paneClosed
     CollapsingSettingsScaffold(
         title = stringResource(if (state.editedDeviceId == null) R.string.remote_add_device else R.string.remote_edit_device),
-        onBack = onBack,
-        actions = { IconButton(onClick = { onForward(); vm.saveDevice(address, token, name) },
-            enabled = !state.restoring && !state.saving && address.isNotBlank() && token.isNotBlank()) {
+        onBack = { if (ownsEditor()) { closed = true; onBack() } },
+        actions = { IconButton(onClick = { if (ownsEditor()) { onForward(); vm.saveDevice(address, token, name) } },
+            enabled = ownsEditor() && !state.restoring && !state.saving && address.isNotBlank() && token.isNotBlank()) {
             Icon(Icons.Default.Save, stringResource(R.string.save))
         } },
     ) {
+        SettingsGroupColumn {
+        if (state.editedDeviceId == null) SettingsInstallationHelp(conch = false,
+            enabled = ownsEditor() && !state.restoring && !state.saving,
+            onClick = { if (ownsEditor() && !state.restoring && !state.saving) guideVisible = true })
         SettingsGroup(title = stringResource(R.string.remote_connection), items = listOf({
             SettingsIconContent(Icons.Default.Computer) {
                 McpLabeledField(label = stringResource(R.string.shell_device_name), value = name,
-                    onValueChange = { name = it }, placeholder = stringResource(R.string.remote_device))
+                    onValueChange = { if (ownsEditor()) name = it }, placeholder = stringResource(R.string.remote_device))
             }
         }, {
             SettingsIconContent(Icons.Default.Link) {
                 McpLabeledField(label = stringResource(R.string.remote_address), value = address,
-                    onValueChange = { address = it }, keyboardType = KeyboardType.Uri,
+                    onValueChange = { if (ownsEditor()) address = it }, keyboardType = KeyboardType.Uri,
                     supportingText = stringResource(R.string.remote_connection_hint),
                     placeholder = stringResource(R.string.remote_address_placeholder))
             }
         }, {
             SettingsIconContent(Icons.Default.Key) {
                 McpLabeledField(label = stringResource(R.string.remote_token), value = token,
-                    onValueChange = { token = it }, keyboardType = KeyboardType.Password, password = true,
+                    onValueChange = { if (ownsEditor()) token = it }, keyboardType = KeyboardType.Password, password = true,
                     placeholder = stringResource(R.string.remote_token_placeholder))
             }
         }))
+        }
+    }
+        }
     }
 }

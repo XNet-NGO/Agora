@@ -226,10 +226,10 @@ internal class WebUiController(
         publicPort = NO_PORT
     }
 
-    /** `http(s)://<address>:<port>` for every non-loopback IPv4 address that is up. */
+    /** Access links for current LAN, tethering and supported peer-VPN addresses. */
     fun accessUrls(port: Int, https: Boolean): List<String> {
         val scheme = if (https) "https" else "http"
-        return interfaceAddresses().map { "$scheme://${it.hostAddress}:$port" }
+        return webUiNetworkAddresses(appContext).map { "$scheme://${it.hostAddress}:$port" }
     }
 
     /** Called by the Compose theme; the next page load in the browser uses it. */
@@ -270,7 +270,7 @@ internal class WebUiController(
             "bolditalic" to R.font.jetbrains_mono_bolditalic,
         )
 
-        /** Non-loopback IPv4 addresses of interfaces that are up (LAN, Tailscale, hotspot). */
+        /** Certificate SAN candidates may be a superset of advertised access links. */
         fun interfaceAddresses(): List<Inet4Address> = runCatching {
             NetworkInterface.getNetworkInterfaces().toList()
                 .filter { it.isUp && !it.isLoopback }

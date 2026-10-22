@@ -15,6 +15,14 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(keystorePropertiesFile.reader())
 }
 
+// Signing inputs resolve from Gradle project properties first (supplied via
+// ORG_GRADLE_PROJECT_* env vars so secrets never hit argv, local.properties, or VCS),
+// then fall back to local.properties for a developer's local keystore. The XNet upload
+// key lives only in the encrypted vault (see xnet-keystore/AGENTS.md); it is decrypted to
+// tmpfs and injected through these env vars for a signing run, then shredded.
+fun signingInput(prop: String, localKey: String, default: String): String =
+    (findProperty(prop) as String?) ?: keystoreProperties.getProperty(localKey, default)
+
 android {
     namespace = "com.newoether.agora"
     testOptions.unitTests.isIncludeAndroidResources = true
@@ -65,14 +73,14 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file(keystoreProperties.getProperty("storeFile", "."))
-            storePassword = keystoreProperties.getProperty("storePassword", "")
-            keyAlias = keystoreProperties.getProperty("keyAlias", "")
-            keyPassword = keystoreProperties.getProperty("keyPassword", "")
+            storeFile = file(signingInput("xnetStoreFile", "storeFile", "."))
+            storePassword = signingInput("xnetStorePassword", "storePassword", "")
+            keyAlias = signingInput("xnetKeyAlias", "keyAlias", "")
+            keyPassword = signingInput("xnetKeyPassword", "keyPassword", "")
         }
     }
 
-    val hasKeystore = keystoreProperties.getProperty("storeFile", ".").let { it != "." }
+    val hasKeystore = signingInput("xnetStoreFile", "storeFile", ".").let { it != "." && file(it).exists() }
     val releaseSigning = if (hasKeystore) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
 
     buildTypes {

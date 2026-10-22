@@ -573,6 +573,8 @@
     <string name="assistant_overlay_title">Show floating assistant button</string>
     <string name="assistant_overlay_desc">A draggable button to invoke Agora from any app</string>
     <string name="assistant_overlay_needs_permission">Needs permission to draw over other apps</string>
+    <string name="assistant_overlay_prompt_hint">Type or tap the mic to ask Agora. Responses appear here.</string>
+    <string name="assistant_overlay_thinking">Thinking…</string>
     <string name="assistant_voice_group">Voice input (offline)</string>
     <string name="assistant_voice_title">On-device speech-to-text</string>
     <string name="assistant_voice_desc">Download the offline speech model (~52 MB) to dictate by voice. Runs fully on-device; no audio leaves the phone.</string>

@@ -656,6 +656,8 @@ fun ChatApp(
                     )
                 },
             ) {
+                androidx.compose.foundation.layout.Column {
+                    com.newoether.agora.ui.chat.bottombar.LiveVoiceTranscriptBar()
                                 ChatBottomBar(
                         submissionController = viewModel.conversationComposerSubmission,
                         composerOwnerId = composerOwnerId,
@@ -748,6 +750,7 @@ fun ChatApp(
                         onRemoveQueuedSend = viewModel::removeQueuedSend, onSendQueuedNow = viewModel::sendQueuedNow,
                         isStopping = isStopping,
                     )
+                }
             }
             }
         }

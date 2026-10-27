@@ -49,6 +49,12 @@ class LiveVoiceSessionController {
 
     val turns = MutableSharedFlow<LiveVoiceTurn>(replay = 0, extraBufferCapacity = 64)
 
+    // Accumulated running transcripts for live display. Reset on each new session.
+    private val _userTranscript = MutableStateFlow("")
+    val userTranscript: StateFlow<String> = _userTranscript.asStateFlow()
+    private val _assistantTranscript = MutableStateFlow("")
+    val assistantTranscript: StateFlow<String> = _assistantTranscript.asStateFlow()
+
     val isActive: Boolean get() = _state.value != LiveVoiceState.IDLE
 
     /**
@@ -63,6 +69,8 @@ class LiveVoiceSessionController {
             return
         }
         _state.value = LiveVoiceState.CONNECTING
+        _userTranscript.value = ""
+        _assistantTranscript.value = ""
         val am = LiveVoiceAudioManager(context.applicationContext).also { audio = it; it.startPlayback() }
         val s = LiveVoiceStreamer(
             okHttp = okHttp,
@@ -81,9 +89,20 @@ class LiveVoiceSessionController {
                     is LiveStreamEvent.Error -> {
                         turns.emit(LiveVoiceTurn.Error(event.message)); stop()
                     }
-                    is LiveStreamEvent.InputTranscription -> turns.emit(LiveVoiceTurn.UserTranscript(event.text))
-                    is LiveStreamEvent.OutputTranscription -> turns.emit(LiveVoiceTurn.AssistantTranscript(event.text))
-                    else -> Unit // AudioChunk handled by the audio manager; TurnComplete/Interrupted no-op here
+                    is LiveStreamEvent.InputTranscription -> {
+                        _userTranscript.value += event.text
+                        turns.emit(LiveVoiceTurn.UserTranscript(event.text))
+                    }
+                    is LiveStreamEvent.OutputTranscription -> {
+                        _assistantTranscript.value += event.text
+                        turns.emit(LiveVoiceTurn.AssistantTranscript(event.text))
+                    }
+                    is LiveStreamEvent.TurnComplete -> {
+                        // End of the assistant's reply: keep it visible but start the next user
+                        // utterance fresh so the two transcripts don't run together.
+                        _userTranscript.value = ""
+                    }
+                    else -> Unit // AudioChunk handled by the audio manager
                 }
             }
         }

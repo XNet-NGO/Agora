@@ -125,6 +125,10 @@ internal fun providerConfigurationIsValid(
  * [ConcurrentHashMap]: mutated by the sync collectors while read on `Dispatchers.IO`
  * during generation.
  */
+// Bump when fetchModels changes WHICH models it keeps (e.g. adding embedding/Live models), so the
+// provider fingerprint changes and a one-time re-fetch repopulates stale caches. v2: + embed/live.
+private const val MODEL_FETCH_SCHEMA_VERSION = 2
+
 class ProviderRegistry(
     private val settings: SettingsRepository,
     private val conversations: ConversationRepository,
@@ -386,7 +390,10 @@ class ProviderRegistry(
             ?.wireValue
             .orEmpty()
         "$name|$keyId|$url|$protocol"
-    }.sorted().joinToString(",").hashCode().toString()
+        // Fold in the fetch-schema version so changing what fetchModels keeps (e.g. adding
+        // embedding + Live models) forces a one-time re-fetch even when provider config is
+        // unchanged — otherwise the cached list stays stale behind the matching fingerprint.
+    }.sorted().joinToString(",").let { "$it|v$MODEL_FETCH_SCHEMA_VERSION" }.hashCode().toString()
 
     /** Starts the process-wide provider lifecycle once, from UI post-list or headless demand. */
     @Synchronized

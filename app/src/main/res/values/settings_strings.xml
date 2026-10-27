@@ -305,6 +305,11 @@
     <string name="sandbox_install_packages">Install Packages</string>
     <string name="sandbox_package_name">Package name</string>
     <string name="sandbox_quick_install">Quick Install</string>
+    <string name="sandbox_command_prompt">Command Prompt</string>
+    <string name="sandbox_command_label">Command</string>
+    <string name="sandbox_command_run">Run</string>
+    <string name="sandbox_search_packages">Search packages</string>
+    <string name="sandbox_search_repo_fmt">Search repository for \"%1$s\"</string>
     <string name="sandbox_installed">Installed Packages</string>
     <string name="sandbox_no_packages">No packages installed. Alpine base only.</string>
     <string name="sandbox_danger_zone">Danger Zone</string>

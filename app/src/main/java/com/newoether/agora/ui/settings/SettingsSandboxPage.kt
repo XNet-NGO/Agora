@@ -104,6 +104,10 @@ fun SettingsSandboxPage(
     var lastInstallResult by remember { mutableStateOf<Boolean?>(null) } // local: success/fail for button state
     var deleteConfirm by remember { mutableStateOf<String?>(null) }
     var resetConfirm by remember { mutableStateOf(false) }
+    // Installed-package filter + repo search.
+    var pkgQuery by remember { mutableStateOf("") }
+    var repoResults by remember { mutableStateOf<List<SandboxManager.PackageInfo>>(emptyList()) }
+    var repoSearching by remember { mutableStateOf(false) }
     // Sync persisted text field back to sandbox manager
     LaunchedEffect(installPkg) { sandboxManager.pendingPkgName = installPkg }
 
@@ -126,6 +130,19 @@ fun SettingsSandboxPage(
         if (isBusy) return
         lastInstallResult = null
         sandboxManager.upgradePackages()
+    }
+
+    fun searchRepo(query: String) {
+        val q = query.trim()
+        if (q.isBlank() || repoSearching) { repoResults = emptyList(); return }
+        repoSearching = true
+        scope.launch {
+            try {
+                repoResults = sandboxSearchRepo(sandboxManager, q)
+            } finally {
+                repoSearching = false
+            }
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -553,6 +570,17 @@ fun SettingsSandboxPage(
                         }))
                     }
 
+                    // ═══ Command prompt (typeable, with extra keys) ═══
+                    item(key = "command_prompt") {
+                        SettingsGroup(title = stringResource(R.string.sandbox_command_prompt), items = listOf({
+                            SandboxCommandPrompt(
+                                sandboxManager = sandboxManager,
+                                enabled = !isBusy,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }))
+                    }
+
                     // ═══ Installed Packages ═══
                     // Section header
                     item(key = "installed_header") {
@@ -562,6 +590,45 @@ fun SettingsSandboxPage(
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                         )
+                    }
+                    // Search / filter installed packages, and search the repo for new ones.
+                    item(key = "pkg_search") {
+                        SandboxPackageSearchField(
+                            query = pkgQuery,
+                            onQueryChange = { pkgQuery = it; repoResults = emptyList() },
+                            showRepoSearch = pkgQuery.isNotBlank() &&
+                                backendPackages.none { it.name.contains(pkgQuery.trim(), ignoreCase = true) },
+                            repoSearching = repoSearching,
+                            searchEnabled = !isBusy,
+                            onRepoSearch = { searchRepo(pkgQuery) },
+                        )
+                    }
+                    // Repo search results (installable; not yet installed).
+                    if (repoResults.isNotEmpty()) {
+                        items(repoResults.size, key = { "repo_${repoResults[it].name}" }) { idx ->
+                            val pkg = repoResults[idx]
+                            Surface(
+                                shape = RoundedCornerShape(5.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                tonalElevation = 1.dp,
+                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                            ) {
+                                SettingsItem(
+                                    headlineContent = { Text(pkg.name, fontWeight = FontWeight.Medium) },
+                                    supportingContent = {
+                                        if (pkg.description.isNotBlank()) {
+                                            Text(pkg.description.take(80), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    },
+                                    leadingContent = { Icon(Icons.Default.CloudDownload, null, tint = MaterialTheme.colorScheme.primary) },
+                                    trailingContent = {
+                                        TextButton(onClick = { installPackage(pkg.name) }, enabled = !isBusy) {
+                                            Text(stringResource(R.string.sandbox_install), style = MaterialTheme.typography.labelMedium)
+                                        }
+                                    },
+                                )
+                            }
+                        }
                     }
                     // Each package as its own LazyColumn item — avoids composing all
                     // packages in a single frame when the list is large.
@@ -588,12 +655,15 @@ fun SettingsSandboxPage(
                                 )
                             }
                         }
-                        else -> items(backendPackages.size, key = { backendPackages[it].name }) { idx ->
-                            val pkg = backendPackages[idx]
+                        else -> {
+                            val filtered = if (pkgQuery.isBlank()) backendPackages
+                                else backendPackages.filter { it.name.contains(pkgQuery.trim(), ignoreCase = true) }
+                            items(filtered.size, key = { filtered[it].name }) { idx ->
+                            val pkg = filtered[idx]
                             val isFirst = idx == 0
-                            val isLast = idx == backendPackages.lastIndex
+                            val isLast = idx == filtered.lastIndex
                             val shape = when {
-                                backendPackages.size == 1 -> RoundedCornerShape(24.dp)
+                                filtered.size == 1 -> RoundedCornerShape(24.dp)
                                 isFirst -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 5.dp, bottomEnd = 5.dp)
                                 isLast -> RoundedCornerShape(topStart = 5.dp, topEnd = 5.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
                                 else -> RoundedCornerShape(5.dp)
@@ -628,6 +698,7 @@ fun SettingsSandboxPage(
                                     }
                                 )
                             }
+                        }
                         }
                     }
 
@@ -719,3 +790,4 @@ fun SettingsSandboxPage(
         )
     }
 }
+

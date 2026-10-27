@@ -135,6 +135,7 @@ internal fun ChatBottomBar(
     fullScreenViewerUrls: List<String>? = null,
     modifier: Modifier = Modifier,
     textFieldState: TextFieldState = rememberSaveable(saver = TextFieldState.Saver) { TextFieldState() },
+    liveVoiceButton: @Composable () -> Unit = {},
     composerState: ChatComposerState = rememberChatComposerState(),
     focusRequester: FocusRequester = FocusRequester(),
     onInputFocusChanged: (Boolean) -> Unit = {},
@@ -463,6 +464,7 @@ internal fun ChatBottomBar(
                     textFieldState = textFieldState,
                     enabled = !submission.isFrozen,
                 )
+                liveVoiceButton()
                 val activeMenuState = remember { mutableStateOf<String?>(null) }
                 var activeMenu by activeMenuState
                 var lastModelDismissTime by remember { mutableLongStateOf(0L) }

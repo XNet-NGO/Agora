@@ -779,7 +779,7 @@ class GeminiProvider(
         val models = decodeModelFetchResponse {
             json.decodeFromString<ModelListResponse>(responseText)
                 .models
-                .filter { it.supportedGenerationMethods.contains("generateContent") }
+                .filter { m -> m.supportedGenerationMethods.any { it == "generateContent" || it == "embedContent" || it == "bidiGenerateContent" } }
                 .map { it.name.removePrefix("models/") }
         }
         if (models.isEmpty()) throw ModelFetchEmptyResultException()

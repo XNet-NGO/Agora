@@ -661,6 +661,9 @@ fun ChatApp(
                         composerOwnerId = composerOwnerId,
                         composerController = viewModel.conversationComposer,
                         composerSnapshot = composerSnapshot,
+                        liveVoiceButton = {
+                            com.newoether.agora.ui.chat.bottombar.ComposerLiveVoiceButton(viewModel)
+                        },
                         onStopGeneration = {
                             haptics.interrupt()
                             viewModel.stopGeneration()

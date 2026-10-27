@@ -42,10 +42,10 @@ class LiveVoiceAudioManager(
     /** Clear queued playback on interruption / barge-in. */
     fun clearPlayback() { playbackQueue.clear() }
 
+    @Synchronized
     fun startCapture() {
         if (audioRecord != null) {
-            captureJob?.cancel(); captureJob = null
-            audioRecord?.stop(); audioRecord?.release(); audioRecord = null
+            stopCapture()
         }
         val rate = config.inputSampleRate
         val bufSize = AudioRecord.getMinBufferSize(
@@ -88,9 +88,27 @@ class LiveVoiceAudioManager(
         }
     }
 
+    @Synchronized
     fun stopCapture() {
         captureJob?.cancel(); captureJob = null
-        audioRecord?.stop(); audioRecord?.release(); audioRecord = null
+        // Detach the field first so the capture loop's `audioRecord?.read` sees null and exits,
+        // then stop/release defensively. AudioRecord.stop() throws IllegalStateException if the
+        // recorder isn't RECORDING (or was already released) — a real race on shutdown — so guard
+        // on state and swallow the benign failure instead of crashing the process.
+        val rec = audioRecord
+        audioRecord = null
+        if (rec != null) {
+            try {
+                if (rec.state == AudioRecord.STATE_INITIALIZED &&
+                    rec.recordingState == AudioRecord.RECORDSTATE_RECORDING
+                ) {
+                    rec.stop()
+                }
+            } catch (_: IllegalStateException) {
+            } catch (_: Throwable) {
+            }
+            try { rec.release() } catch (_: Throwable) {}
+        }
     }
 
     fun startPlayback(outputRate: Int = config.outputSampleRate) {
@@ -123,12 +141,25 @@ class LiveVoiceAudioManager(
 
     fun playAudio(pcmData: ByteArray) { playbackQueue.offer(pcmData) }
 
+    @Synchronized
     fun stop() {
         stopCapture()
         playbackJob?.cancel(); playbackJob = null
         playbackQueue.clear()
-        aec?.release(); aec = null
-        audioTrack?.stop(); audioTrack?.release(); audioTrack = null
+        try { aec?.release() } catch (_: Throwable) {}
+        aec = null
+        val track = audioTrack
+        audioTrack = null
+        if (track != null) {
+            try {
+                if (track.state == AudioTrack.STATE_INITIALIZED &&
+                    track.playState != AudioTrack.PLAYSTATE_STOPPED
+                ) {
+                    track.stop()
+                }
+            } catch (_: Throwable) {}
+            try { track.release() } catch (_: Throwable) {}
+        }
         webSocket = null
     }
 

@@ -21,7 +21,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,9 +60,9 @@ fun SettingsLiveVoicePage(viewModel: ChatViewModel, onBack: () -> Unit) {
         viewModel.settings.setLiveVoiceConfig(newConfig)
     }
 
-    val controller = remember { LiveVoiceSessionController() }
+    val controller = com.newoether.agora.voice.live.LiveVoiceSession.controller
     val sessionState by controller.state.collectAsState()
-    DisposableEffect(Unit) { onDispose { controller.stop() } }
+    // Shared session: do not stop on leaving Settings (the composer button owns lifecycle too).
 
     // Only Google supports the direct Live route today; still sourced from the shared helper so
     // custom Google-compatible providers appear and more can be enabled later.
@@ -174,7 +173,7 @@ fun SettingsLiveVoicePage(viewModel: ChatViewModel, onBack: () -> Unit) {
                                 label = stringResource(R.string.live_voice_model),
                                 value = config.model,
                                 onValueChange = { update(config.copy(model = it)) },
-                                placeholder = "gemini-2.0-flash-live-001",
+                                placeholder = "gemini-3.8-live",
                             )
                         }
                     }

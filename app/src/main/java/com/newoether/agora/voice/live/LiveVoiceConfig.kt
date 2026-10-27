@@ -29,7 +29,7 @@ data class LiveVoiceConfig(
          */
         fun looksLiveCapable(modelId: String): Boolean {
             val id = modelId.lowercase()
-            return id.contains("live") || id.contains("realtime")
+            return id.contains("live") || id.contains("realtime") || id.contains("native-audio")
         }
     }
 }

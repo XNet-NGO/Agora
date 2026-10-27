@@ -47,7 +47,7 @@ internal fun ComposerLiveVoiceButton(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
-            controller.start(ctx, config, viewModel.settings.resolveActiveKey(config.provider).orEmpty())
+            controller.start(ctx, config, viewModel.settings.resolveActiveKey(config.provider).orEmpty(), viewModel.buildLiveToolBridge())
         } else {
             Toast.makeText(ctx, ctx.getString(R.string.assistant_voice_needs_mic), Toast.LENGTH_SHORT).show()
         }
@@ -74,7 +74,7 @@ internal fun ComposerLiveVoiceButton(
                 ) {
                     micPermLauncher.launch(Manifest.permission.RECORD_AUDIO)
                 } else {
-                    controller.start(ctx, config, key)
+                    controller.start(ctx, config, key, viewModel.buildLiveToolBridge())
                 }
             }
         },

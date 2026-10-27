@@ -196,6 +196,32 @@ class ChatViewModel(
     // lives in [ConversationGenerationState], one per conversation via [generationRegistry].
 
     private val generationManager: GenerationManager get() = chatRuntime.generationManager
+
+    /**
+     * Build a [com.newoether.agora.voice.live.LiveToolBridge] for a Live Voice session, exposing
+     * the agent tool set (including MCP) with the user's current tool toggles. Keys are resolved
+     * so tools like web search / shell can run inside the voice turn.
+     */
+    fun buildLiveToolBridge(): com.newoether.agora.voice.live.LiveToolBridge {
+        val ctx = GenerationContext(
+            conversationId = "live-voice",
+            shellEnabled = settings.shellEnabled.value,
+            shellDevices = settings.shellDevices.value,
+            sandboxEnabled = settings.sandboxEnabled.value,
+            sandboxSharedStorageEnabled = settings.sandboxSharedStorageEnabled.value,
+            webSearchEnabled = settings.webSearchEnabled.value,
+            webSearchApiKeys = settings.webSearchApiKeys.value,
+            webSearchProvider = settings.webSearchProvider.value,
+            webSearchNumResults = settings.webSearchNumResults.value,
+            webSearchBaseUrl = settings.webSearchBaseUrl.value,
+            accessSavedMemories = settings.accessSavedMemories.value,
+            accessActiveMemory = settings.accessActiveMemory.value,
+            accessPastConversations = settings.accessPastConversations.value,
+            todoEnabled = settings.todoEnabled.value,
+            askUserEnabled = false,
+        )
+        return generationManager.buildLiveToolBridge(ctx)
+    }
     private val semanticSearchService by lazy {
         SemanticSearchService(
             settings = settings,

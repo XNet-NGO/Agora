@@ -62,7 +62,7 @@ class LiveVoiceSessionController {
      * is already running or the config is incomplete.
      */
     @Synchronized
-    fun start(context: android.content.Context, config: LiveVoiceConfig, apiKey: String) {
+    fun start(context: android.content.Context, config: LiveVoiceConfig, apiKey: String, toolBridge: LiveToolBridge? = null) {
         if (_state.value != LiveVoiceState.IDLE) return
         if (apiKey.isBlank() || config.model.isBlank()) {
             scope.launch { turns.emit(LiveVoiceTurn.Error("Live Voice is not fully configured.")) }
@@ -79,6 +79,7 @@ class LiveVoiceSessionController {
             audioManager = am,
             systemInstruction = config.systemInstruction,
             voiceName = config.voiceName.ifBlank { LiveVoiceConfig.DEFAULT_VOICE },
+            toolBridge = toolBridge,
         ).also { streamer = it }
 
         collectJob = scope.launch {

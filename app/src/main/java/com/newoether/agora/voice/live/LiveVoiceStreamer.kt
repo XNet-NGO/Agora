@@ -7,6 +7,8 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -34,8 +36,12 @@ class LiveVoiceStreamer(
     private val audioManager: LiveVoiceAudioManager,
     private val systemInstruction: String = "",
     private val voiceName: String = LiveVoiceConfig.DEFAULT_VOICE,
+    private val toolBridge: LiveToolBridge? = null,
 ) {
     private var webSocket: WebSocket? = null
+    private val scope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + Dispatchers.IO,
+    )
 
     /** Normalize a possibly-prefixed id to Google's "models/<name>" form. */
     private fun googleModelId(): String {
@@ -86,6 +92,10 @@ class LiveVoiceStreamer(
                         if (json.has("goAway")) {
                             Log.w(TAG, "GoAway: ${json.optJSONObject("goAway")?.optString("timeLeft")}")
                             return
+                        }
+                        // Tool call from the model: execute via the bridge and send responses back.
+                        json.optJSONObject("toolCall")?.let { tc ->
+                            handleToolCall(tc); return
                         }
                         parseServerMessages(text).forEach { trySend(it) }
                     } catch (e: Exception) {
@@ -155,6 +165,11 @@ class LiveVoiceStreamer(
                         "realtimeInputConfig",
                         JSONObject().apply { put("turnCoverage", "TURN_INCLUDES_ALL_INPUT") },
                     )
+                    // Expose Agora's tool set (incl. MCP) to the live model as functionDeclarations.
+                    val decls = toolBridge?.functionDeclarations()
+                    if (decls != null && decls.length() > 0) {
+                        put("tools", JSONArray().put(JSONObject().apply { put("functionDeclarations", decls) }))
+                    }
                 },
             )
         }
@@ -197,6 +212,35 @@ class LiveVoiceStreamer(
         return events
     }
 
+    /** Execute each function call via the bridge and return the results as a toolResponse. */
+    private fun handleToolCall(toolCall: JSONObject) {
+        val bridge = toolBridge ?: return
+        val fcs = toolCall.optJSONArray("functionCalls") ?: return
+        scope.launch {
+            val responses = JSONArray()
+            for (i in 0 until fcs.length()) {
+                val fc = fcs.getJSONObject(i)
+                val name = fc.optString("name")
+                val id = fc.optString("id", "call_${System.nanoTime()}")
+                val args = fc.optJSONObject("args")?.toString() ?: "{}"
+                val resultText = runCatching { bridge.execute(name, args) }
+                    .getOrElse { "Error executing tool '$name': ${it.message}" }
+                responses.put(
+                    JSONObject().apply {
+                        put("id", id)
+                        put("name", name)
+                        put("response", JSONObject().apply { put("output", JSONObject().apply { put("result", resultText) }) })
+                    },
+                )
+            }
+            webSocket?.send(
+                JSONObject().apply {
+                    put("toolResponse", JSONObject().apply { put("functionResponses", responses) })
+                }.toString(),
+            )
+        }
+    }
+
     /** Send a text turn mid-conversation. */
     fun sendText(text: String) {
         webSocket?.send(JSONObject().apply { put("realtimeInput", JSONObject().apply { put("text", text) }) }.toString())
@@ -208,6 +252,7 @@ class LiveVoiceStreamer(
     }
 
     fun stop() {
+        runCatching { scope.cancel() }
         audioManager.stop()
         webSocket?.close(1000, "Client ended")
         webSocket = null

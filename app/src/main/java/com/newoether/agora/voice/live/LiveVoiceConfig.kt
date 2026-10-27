@@ -24,6 +24,20 @@ data class LiveVoiceConfig(
         val GOOGLE_VOICES = listOf("Aoede", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Zephyr")
 
         /**
+         * Known Google Live-API model ids (bidiGenerateContent). Seeded so the picker is populated
+         * even before a model refetch; unioned with whatever the provider's live model list returns.
+         */
+        val GOOGLE_LIVE_MODELS = listOf(
+            "gemini-3.8-live",
+            "gemini-3.8-live-extended-thinking",
+            "gemini-3.1-flash-live-preview",
+            "gemini-3.5-live-translate-preview",
+            "gemini-3.5-transcribe-live",
+            "gemini-2.5-flash-native-audio-latest",
+            "gemini-2.5-flash-native-audio-preview-12-2025",
+        )
+
+        /**
          * Heuristic for Live-capable model ids so the model picker can filter. Google's Live API
          * models carry "live" in the id (e.g. gemini-2.0-flash-live-001, gemini-2.5-flash-...-live).
          */

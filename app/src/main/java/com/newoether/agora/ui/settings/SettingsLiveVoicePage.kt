@@ -70,9 +70,15 @@ fun SettingsLiveVoicePage(viewModel: ChatViewModel, onBack: () -> Unit) {
         buildProviderModels(availableModels, customProviders, providerBaseUrls)
     }
     val selectedProvider = providers.firstOrNull { it.name.equals(config.provider, ignoreCase = true) }
-    val liveModels = remember(selectedProvider) {
-        selectedProvider?.models?.filter(LiveVoiceConfig::looksLiveCapable).orEmpty()
-            .ifEmpty { selectedProvider?.models.orEmpty() }
+    val liveModels = remember(selectedProvider, config.provider) {
+        val fetchedLive = selectedProvider?.models?.filter(LiveVoiceConfig::looksLiveCapable).orEmpty()
+        // Seed known Google Live ids so the list is usable even before a model refetch.
+        val seeds = if (config.provider.equals(com.newoether.agora.util.Constants.PROVIDER_GOOGLE, true)) {
+            LiveVoiceConfig.GOOGLE_LIVE_MODELS
+        } else {
+            emptyList()
+        }
+        (fetchedLive + seeds).distinct()
     }
 
     val micPermLauncher = rememberLauncherForActivityResult(
@@ -80,7 +86,7 @@ fun SettingsLiveVoicePage(viewModel: ChatViewModel, onBack: () -> Unit) {
     ) { granted ->
         if (granted) {
             val key = viewModel.settings.resolveActiveKey(config.provider).orEmpty()
-            controller.start(config, key)
+            controller.start(ctx, config, key)
         }
     }
 
@@ -92,7 +98,7 @@ fun SettingsLiveVoicePage(viewModel: ChatViewModel, onBack: () -> Unit) {
             micPermLauncher.launch(Manifest.permission.RECORD_AUDIO); return
         }
         val key = viewModel.settings.resolveActiveKey(config.provider).orEmpty()
-        controller.start(config, key)
+        controller.start(ctx, config, key)
     }
 
     CollapsingSettingsScaffold(title = stringResource(R.string.settings_live_voice), onBack = onBack) {

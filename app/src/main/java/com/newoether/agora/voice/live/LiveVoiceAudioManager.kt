@@ -26,8 +26,13 @@ import java.util.concurrent.TimeUnit
  * AcousticEchoCanceler + shared audio session give barge-in-friendly echo cancellation.
  */
 class LiveVoiceAudioManager(
+    private val appContext: android.content.Context,
     private val config: LiveAudioConfig = LiveAudioConfig(),
 ) {
+    private val audioManager =
+        appContext.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+    private var priorAudioMode = android.media.AudioManager.MODE_NORMAL
+    private var priorSpeakerphone = false
     private var audioRecord: AudioRecord? = null
     private var audioTrack: AudioTrack? = null
     private var captureJob: Job? = null
@@ -48,6 +53,15 @@ class LiveVoiceAudioManager(
             stopCapture()
         }
         val rate = config.inputSampleRate
+        // Route the voice-communication stream to the speaker; without this, VOICE_COMMUNICATION
+        // audio plays through the earpiece at near-zero volume ("frames delivered but silent").
+        runCatching {
+            priorAudioMode = audioManager.mode
+            priorSpeakerphone = audioManager.isSpeakerphoneOn
+            audioManager.mode = android.media.AudioManager.MODE_IN_COMMUNICATION
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = true
+        }
         val bufSize = AudioRecord.getMinBufferSize(
             rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
         )
@@ -161,6 +175,12 @@ class LiveVoiceAudioManager(
             try { track.release() } catch (_: Throwable) {}
         }
         webSocket = null
+        // Restore the device audio routing we changed for the session.
+        runCatching {
+            @Suppress("DEPRECATION")
+            audioManager.isSpeakerphoneOn = priorSpeakerphone
+            audioManager.mode = priorAudioMode
+        }
     }
 
     companion object { private const val TAG = "LiveVoiceAudio" }

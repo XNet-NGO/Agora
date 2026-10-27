@@ -56,14 +56,14 @@ class LiveVoiceSessionController {
      * is already running or the config is incomplete.
      */
     @Synchronized
-    fun start(config: LiveVoiceConfig, apiKey: String) {
+    fun start(context: android.content.Context, config: LiveVoiceConfig, apiKey: String) {
         if (_state.value != LiveVoiceState.IDLE) return
         if (apiKey.isBlank() || config.model.isBlank()) {
             scope.launch { turns.emit(LiveVoiceTurn.Error("Live Voice is not fully configured.")) }
             return
         }
         _state.value = LiveVoiceState.CONNECTING
-        val am = LiveVoiceAudioManager().also { audio = it; it.startPlayback() }
+        val am = LiveVoiceAudioManager(context.applicationContext).also { audio = it; it.startPlayback() }
         val s = LiveVoiceStreamer(
             okHttp = okHttp,
             apiKey = apiKey,

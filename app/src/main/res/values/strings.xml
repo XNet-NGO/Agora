@@ -230,6 +230,20 @@
     <string name="embedding_title">Embedding</string>
     <string name="embedding_model_label">Model</string>
     <string name="embedding_model_suggestions">Available models</string>
+    <!-- Live Voice -->
+    <string name="settings_live_voice">Live Voice</string>
+    <string name="settings_live_voice_desc">Realtime two-way voice (Live API)</string>
+    <string name="live_voice_enable">Enable Live Voice</string>
+    <string name="live_voice_enable_desc">Talk to Agora in real time using a provider\'s Live API</string>
+    <string name="live_voice_provider">Provider</string>
+    <string name="live_voice_model">Live model</string>
+    <string name="live_voice_no_models">No Live-capable models found — fetch models or type an id below</string>
+    <string name="live_voice_voice">Voice</string>
+    <string name="live_voice_system_instruction">System instruction</string>
+    <string name="live_voice_system_instruction_hint">Optional persona/instructions for the voice session</string>
+    <string name="live_voice_start">Start session</string>
+    <string name="live_voice_connecting">Connecting…</string>
+    <string name="live_voice_stop">Stop session</string>
     <string name="embedding_base_url_label">Base URL</string>
     <string name="embedding_provider_label">Provider</string>
     <string name="embedding_api_key">API Key</string>

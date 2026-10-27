@@ -134,6 +134,16 @@ class SettingsManager(private val context: Context) : SettingsManagerAppearanceB
         try { json.decodeFromString<List<EmbeddingModelConfig>>(jsonStr) } catch (e: Exception) { emptyList() }
     }
     val activeEmbeddingModelId: Flow<String> = context.dataStore.data.map { it[ACTIVE_EMBEDDING_MODEL_ID] ?: "" }
+    val liveVoiceConfig: Flow<com.newoether.agora.voice.live.LiveVoiceConfig> =
+        context.dataStore.data.map { pref ->
+            val jsonStr = pref[LIVE_VOICE_CONFIG_JSON] ?: ""
+            if (jsonStr.isBlank()) com.newoether.agora.voice.live.LiveVoiceConfig()
+            else try {
+                json.decodeFromString<com.newoether.agora.voice.live.LiveVoiceConfig>(jsonStr)
+            } catch (e: Exception) {
+                com.newoether.agora.voice.live.LiveVoiceConfig()
+            }
+        }
 
     val appLanguage: Flow<String> = context.dataStore.data.map { it[APP_LANGUAGE] ?: "system" }
     val webSearchEnabled: Flow<Boolean> = context.dataStore.data.map { it[WEB_SEARCH_ENABLED] ?: true }
@@ -431,6 +441,9 @@ class SettingsManager(private val context: Context) : SettingsManagerAppearanceB
     }
     suspend fun setActiveEmbeddingModelId(id: String) {
         context.dataStore.edit { it[ACTIVE_EMBEDDING_MODEL_ID] = id }
+    }
+    suspend fun saveLiveVoiceConfig(config: com.newoether.agora.voice.live.LiveVoiceConfig) {
+        context.dataStore.edit { it[LIVE_VOICE_CONFIG_JSON] = json.encodeToString(config) }
     }
     suspend fun saveAppLanguage(language: String) {
         context.dataStore.edit { it[APP_LANGUAGE] = language }

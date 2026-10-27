@@ -229,6 +229,7 @@
     <string name="search_method_rag">Semantic (RAG)</string>
     <string name="embedding_title">Embedding</string>
     <string name="embedding_model_label">Model</string>
+    <string name="embedding_model_suggestions">Available models</string>
     <string name="embedding_base_url_label">Base URL</string>
     <string name="embedding_provider_label">Provider</string>
     <string name="embedding_api_key">API Key</string>

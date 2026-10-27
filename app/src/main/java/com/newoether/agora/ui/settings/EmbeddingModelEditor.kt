@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Cloud
@@ -28,6 +30,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -173,6 +176,19 @@ internal fun EmbeddingModelEditor(
         }
     }
     val usingSavedKey = savedKey != null && draft.useSavedKey
+    // Suggested model ids auto-populated from the provider's live fetched model list
+    // (availableModels + customProviders), unioned with the preset's known embedding ids.
+    // This is why embedding models now appear for selection instead of only the hardcoded set.
+    val availableModels by viewModel.settings.availableModels.collectAsState()
+    val customProviders by viewModel.settings.customProviders.collectAsState()
+    val providerBaseUrls by viewModel.settings.providerBaseUrls.collectAsState()
+    val suggestedModels = remember(preset.name, availableModels, customProviders) {
+        val fromProvider = buildProviderModels(availableModels, customProviders, providerBaseUrls)
+            .firstOrNull { it.name.equals(preset.name, ignoreCase = true) }
+            ?.models
+            .orEmpty()
+        (preset.models + fromProvider).distinct()
+    }
     val effectiveKey = when {
         !preset.needsKey && isNew -> ""
         usingSavedKey -> savedKey!!.key
@@ -440,6 +456,42 @@ internal fun EmbeddingModelEditor(
                                         stringResource(R.string.embedding_model_locked_desc),
                                     )
                                 }
+                            }
+                        }
+                        // Auto-populated suggestions from the provider's live model list; tap to fill.
+                        if (isNew && suggestedModels.isNotEmpty()) {
+                            add {
+                                var modelMenuExpanded by remember { mutableStateOf(false) }
+                                SettingsItem(
+                                    headlineContent = { Text(stringResource(R.string.embedding_model_suggestions)) },
+                                    supportingContent = {
+                                        Text(
+                                            draft.modelName.ifBlank { stringResource(R.string.embedding_model_id_hint) },
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    },
+                                    leadingContent = { Icon(Icons.Default.Checklist, null, tint = MaterialTheme.colorScheme.primary) },
+                                    trailingContent = {
+                                        Box {
+                                            Icon(Icons.Default.ArrowDropDown, null)
+                                            AgoraDropdownMenu(
+                                                expanded = modelMenuExpanded,
+                                                onDismissRequest = { modelMenuExpanded = false },
+                                            ) {
+                                                suggestedModels.forEach { m ->
+                                                    AgoraDropdownMenuItem(
+                                                        text = { Text(m) },
+                                                        onClick = {
+                                                            draft = draft.copy(modelName = m)
+                                                            modelMenuExpanded = false
+                                                        },
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.clickable { modelMenuExpanded = true },
+                                )
                             }
                         }
                     },

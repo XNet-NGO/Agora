@@ -57,6 +57,9 @@ import com.newoether.agora.sandbox.SandboxSharedStorageAccess
 import com.newoether.agora.util.DebugLog
 import kotlinx.coroutines.launch
 
+/** Size budget the sandbox disk-usage bar is calibrated to, in MB (6 GB). */
+private const val SANDBOX_SIZE_BUDGET_MB = 6144f
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsSandboxPage(
@@ -175,7 +178,8 @@ fun SettingsSandboxPage(
         try { diskUsageMB = sandboxManager.getDiskUsageMB() } catch (_: Exception) {}
     }
     val diskUsageProgress by animateFloatAsState(
-        targetValue = (diskUsageMB.toFloat() / 2048f).coerceIn(0f, 1f),
+        // The disk-usage bar is calibrated to the sandbox size budget (6 GB).
+        targetValue = (diskUsageMB.toFloat() / SANDBOX_SIZE_BUDGET_MB).coerceIn(0f, 1f),
         animationSpec = if (motionPolicy.allowSpatialTransitions) {
             tween(durationMillis = 500, easing = FastOutSlowInEasing)
         } else {
@@ -435,148 +439,15 @@ fun SettingsSandboxPage(
                         )
                     }
 
-                    // ═══ Install Packages ═══
-                    item {
-                        SettingsGroup(title = stringResource(R.string.sandbox_install_packages), items = listOf({
-                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                                // Input row
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                    OutlinedTextField(
-                                        value = installPkg,
-                                        onValueChange = { installPkg = it; lastInstallResult = null },
-                                        label = { Text(stringResource(R.string.sandbox_package_name)) },
-                                        placeholder = { Text(stringResource(R.string.sandbox_package_placeholder)) },
-                                        singleLine = true,
-                                        shape = RoundedCornerShape(16.dp),
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    val installDone = installPkg.isNotBlank() && lastInstallResult != null && !isBusy
-                                    val btnBgColor by animateColorAsState(
-                                        targetValue = when {
-                                            isBusy || installPkg.isBlank() -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                            lastInstallResult == true -> MaterialTheme.colorScheme.secondaryContainer
-                                            lastInstallResult == false -> MaterialTheme.colorScheme.errorContainer
-                                            else -> MaterialTheme.colorScheme.primary
-                                        },
-                                        animationSpec = tween(400)
-                                    )
-                                    val btnContentColor by animateColorAsState(
-                                        targetValue = when {
-                                            isBusy || installPkg.isBlank() -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                            lastInstallResult == true -> MaterialTheme.colorScheme.onSecondaryContainer
-                                            lastInstallResult == false -> MaterialTheme.colorScheme.onErrorContainer
-                                            else -> MaterialTheme.colorScheme.onPrimary
-                                        },
-                                        animationSpec = tween(400)
-                                    )
-                                    Button(
-                                        onClick = { if (installPkg.isNotBlank() && !isBusy && lastInstallResult == null) installPackage(installPkg.trim()) },
-                                        enabled = true,
-                                        shape = RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp, topEnd = 28.dp, bottomEnd = 28.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = btnBgColor,
-                                            contentColor = btnContentColor,
-                                            disabledContainerColor = btnBgColor,
-                                            disabledContentColor = btnContentColor
-                                        ),
-                                        modifier = Modifier.height(56.dp).widthIn(min = 110.dp).offset(y = 4.dp)
-                                    ) {
-                                        if (isBusy) {
-                                            CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.5.dp, color = MaterialTheme.colorScheme.primary)
-                                        } else if (installDone) {
-                                            Text(if (lastInstallResult == true) stringResource(R.string.sandbox_installed_label) else stringResource(R.string.sandbox_failed_label))
-                                        } else {
-                                            Text(stringResource(R.string.sandbox_install))
-                                        }
-                                    }
-                                }
 
-                                // Terminal output (fixed-height, terminal theme, auto-scroll)
-                                AnimatedVisibility(
-                                    visible = showTerminal && terminalOutput.isNotBlank(),
-                                    enter = if (motionPolicy.allowSpatialTransitions) {
-                                        expandVertically() + fadeIn()
-                                    } else {
-                                        fadeIn()
-                                    },
-                                    exit = if (motionPolicy.allowSpatialTransitions) {
-                                        shrinkVertically() + fadeOut()
-                                    } else {
-                                        fadeOut()
-                                    },
-                                ) {
-                                    val termScroll = rememberScrollState()
-                                    LaunchedEffect(
-                                        terminalOutput,
-                                        motionPolicy.allowProgrammaticScrollMotion,
-                                    ) {
-                                        if (motionPolicy.allowProgrammaticScrollMotion) {
-                                            termScroll.animateScrollTo(termScroll.maxValue)
-                                        } else {
-                                            termScroll.scrollTo(termScroll.maxValue)
-                                        }
-                                    }
-                                    val terminalFg = MaterialTheme.colorScheme.onSurface
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = MaterialTheme.colorScheme.surface,
-                                        tonalElevation = 4.dp,
-                                        modifier = Modifier.padding(top = 16.dp).fillMaxWidth().height(260.dp)
-                                    ) {
-                                        SelectionContainer {
-                                            Text(
-                                                terminalOutput,
-                                                modifier = Modifier.padding(12.dp).fillMaxWidth()
-                                                    .verticalScroll(termScroll)
-                                                    .nestedScroll(object : NestedScrollConnection {
-                                                        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset = available
-                                                        override suspend fun onPreFling(available: Velocity): Velocity = available
-                                                        override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity = available
-                                                    }),
-                                                style = MaterialTheme.typography.bodySmall.copy(
-                                                    fontFamily = FontFamily(Font(R.font.jetbrains_mono_regular)),
-                                                    lineHeight = 18.sp
-                                                ),
-                                                color = terminalFg
-                                            )
-                                        }
-                                    }
-                                }
-
-                                // Quick install chips
-                                Spacer(Modifier.height(16.dp))
-                                Text(
-                                    stringResource(R.string.sandbox_quick_install) + ":",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                @OptIn(ExperimentalLayoutApi::class)
-                                FlowRow(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalArrangement = Arrangement.spacedBy(0.dp)
-                                ) {
-                                    quickPkgs.forEach { pkg ->
-                                        FilterChip(
-                                            selected = false,
-                                            onClick = { installPackage(pkg) },
-                                            enabled = !isBusy,
-                                            label = { Text(pkg, style = MaterialTheme.typography.labelSmall) }
-                                        )
-                                    }
-                                }
-                            }
-                        }))
-                    }
-
-                    // ═══ Command prompt (typeable, with extra keys) ═══
+                    // ═══ Install Packages & Commands (one prompt) ═══
                     item(key = "command_prompt") {
-                        SettingsGroup(title = stringResource(R.string.sandbox_command_prompt), items = listOf({
+                        SettingsGroup(title = stringResource(R.string.sandbox_install_packages), items = listOf({
                             SandboxCommandPrompt(
                                 sandboxManager = sandboxManager,
                                 enabled = !isBusy,
                                 modifier = Modifier.fillMaxWidth(),
+                                quickPackages = quickPkgs,
                             )
                         }))
                     }

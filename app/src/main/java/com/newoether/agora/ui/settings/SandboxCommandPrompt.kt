@@ -48,7 +48,11 @@ import kotlinx.coroutines.launch
 private const val COMMAND_LOG_MAX = 8000
 
 /**
- * Typeable command prompt for the sandbox, with a ShellBox-style extra-keys row ([ExtraKeysRow]).
+ * Typeable command prompt for the sandbox, with a ShellBox-style extra-keys row ([ExtraKeysRow])
+ * and quick-install chips that PREFILL the prompt (they do not install directly).
+ *
+ * This is the single input for the Install Packages section: tapping a quick chip drops
+ * `apk add <pkg>` into the field (caret at end) so the user can run it as-is or edit first.
  *
  * Agora's sandbox is request/response (no live PTY), so this runs each entered line through
  * [SandboxManager.executeCommand] and appends stdout/stderr/exit to a local scrollback. The
@@ -60,11 +64,16 @@ internal fun SandboxCommandPrompt(
     sandboxManager: SandboxManager,
     enabled: Boolean,
     modifier: Modifier = Modifier,
+    quickPackages: List<String> = emptyList(),
 ) {
     val scope = rememberCoroutineScope()
     var input by remember { mutableStateOf(TextFieldValue("")) }
     var running by remember { mutableStateOf(false) }
     var log by remember { mutableStateOf("") }
+
+    fun prefill(text: String) {
+        input = TextFieldValue(text, selection = androidx.compose.ui.text.TextRange(text.length))
+    }
 
     fun run(cmd: String) {
         val c = cmd.trim()
@@ -118,6 +127,27 @@ internal fun SandboxCommandPrompt(
         }
         Spacer(Modifier.height(8.dp))
         ExtraKeysRow(value = input, onValueChange = { input = it }, modifier = Modifier.fillMaxWidth())
+        if (quickPackages.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                stringResource(R.string.sandbox_quick_install) + ":",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
+            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+            ) {
+                quickPackages.forEach { pkg ->
+                    androidx.compose.material3.AssistChip(
+                        onClick = { prefill("apk add $pkg") },
+                        enabled = enabled && !running,
+                        label = { Text(pkg, style = MaterialTheme.typography.labelSmall) },
+                    )
+                }
+            }
+        }
         if (log.isNotBlank()) {
             val cmdScroll = rememberScrollState()
             LaunchedEffect(log) { cmdScroll.scrollTo(cmdScroll.maxValue) }

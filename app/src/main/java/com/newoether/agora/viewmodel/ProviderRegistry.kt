@@ -127,7 +127,10 @@ internal fun providerConfigurationIsValid(
  */
 // Bump when fetchModels changes WHICH models it keeps (e.g. adding embedding/Live models), so the
 // provider fingerprint changes and a one-time re-fetch repopulates stale caches. v2: + embed/live.
-private const val MODEL_FETCH_SCHEMA_VERSION = 2
+// v3: the v2 resync ran while the sync-skip branch still wiped unconfigured providers' lists, so it
+// cached a poisoned (seeds-only) result and saved the matching fingerprint, suppressing further
+// syncs. Bump to force one clean resync now that the wipe is fixed.
+private const val MODEL_FETCH_SCHEMA_VERSION = 3
 
 class ProviderRegistry(
     private val settings: SettingsRepository,

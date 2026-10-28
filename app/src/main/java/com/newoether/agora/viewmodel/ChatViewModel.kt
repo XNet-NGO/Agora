@@ -233,13 +233,18 @@ class ChatViewModel(
      */
     fun installVoiceMessageSink() {
         com.newoether.agora.voice.live.LiveVoiceSession.controller.messageSink = { userText, assistantText ->
-            val conversationId = currentConversationId.value
-            if (conversationId != null) {
-                val model = currentActiveModel.value.ifBlank { null }
-                viewModelScope.launch {
-                    runCatching {
-                        convRepo.persistVoiceExchange(conversationId, userText, assistantText, model)
+            val model = currentActiveModel.value.ifBlank { null }
+            viewModelScope.launch {
+                runCatching {
+                    // Persist into the open conversation; if none is open (voice started from a fresh
+                    // chat), create one and open it first so the turns have a home (AIOPE parity).
+                    var conversationId = currentConversationId.value
+                    if (conversationId == null) {
+                        val title = userText.take(40).ifBlank { "Voice conversation" }
+                        conversationId = convRepo.createConversation(title, modelId = model)
+                        selectionController.selectConversation(conversationId)
                     }
+                    convRepo.persistVoiceExchange(conversationId, userText, assistantText, model)
                 }
             }
         }

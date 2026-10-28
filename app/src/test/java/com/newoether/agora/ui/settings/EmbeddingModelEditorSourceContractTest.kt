@@ -85,30 +85,24 @@ class EmbeddingModelEditorSourceContractTest {
     }
 
     @Test
-    fun onlyLocalAddShowsTheTwoLineWholeRowFilePicker() {
+    fun localAddShowsOnnxDownloadInsteadOfGgufImport() {
         val editor = readSettingsSource("EmbeddingModelEditor.kt")
-        val filePickerGroup = editor.section(
+        val onnxGroup = editor.section(
             "} else if (isNew) {\n                SettingsGroup(",
             "title = stringResource(R.string.embedding_general)",
         )
 
-        assertEquals(1, Regex("""R\.string\.embedding_model_file\b""").findAll(filePickerGroup).count())
-        assertTrue(filePickerGroup.contains("title = stringResource(R.string.embedding_model_file)"))
-        assertFalse(filePickerGroup.contains("headlineContent = { Text(stringResource(R.string.embedding_model_file)) }"))
-        assertTrue(filePickerGroup.contains("ModelImportItem("))
-        assertTrue(filePickerGroup.contains("draft.localFileName.ifBlank { stringResource(R.string.embedding_import_title) }"))
-        assertTrue(filePickerGroup.contains("description = stringResource(R.string.embedding_import_desc)"))
-        assertTrue(filePickerGroup.contains("Icons.Default.AutoAwesome"))
-        assertTrue(filePickerGroup.contains("importing = isImporting"))
-        assertFalse(filePickerGroup.contains("trailingContent"))
-        val item = readSettingsSource("ModelImportItem.kt")
-        assertTrue(item.contains("enabled = enabled && !importing"))
-        assertTrue(item.contains("targetState = importing"))
-        assertTrue(item.contains("MotionAwareCircularProgressIndicator("))
-        assertTrue(filePickerGroup.contains("filePicker.launch(arrayOf(\"*/*\"))"))
-        assertFalse(filePickerGroup.contains("isNew && draft.localFilePath.isBlank()"))
-        assertFalse(filePickerGroup.contains("TextButton("))
-        assertFalse(editor.contains("R.string.embedding_replace_file"))
+        assertEquals(1, Regex("""R\.string\.embedding_model_file\b""").findAll(onnxGroup).count())
+        assertTrue(onnxGroup.contains("title = stringResource(R.string.embedding_model_file)"))
+        // The local option is ONNX-download now, not a GGUF file import.
+        assertTrue(onnxGroup.contains("R.string.onnx_embed_title"))
+        assertTrue(onnxGroup.contains("R.string.onnx_embed_download"))
+        assertTrue(onnxGroup.contains("OnnxModelBootstrap.setup(context)"))
+        assertTrue(onnxGroup.contains("OnnxEmbeddingProvider.reset()"))
+        assertFalse(onnxGroup.contains("ModelImportItem("))
+        assertFalse(onnxGroup.contains("filePicker"))
+        assertFalse(editor.contains("importEmbeddingGguf"))
+        assertFalse(editor.contains(".removeSuffix(\".gguf\")"))
     }
 
     @Test
@@ -143,17 +137,13 @@ class EmbeddingModelEditorSourceContractTest {
         val leave = editor.section("val leave = {", "val guardedBack =")
         assertTrue(leave.indexOf("lifecycle.close()") >= 0)
         assertTrue(leave.indexOf("lifecycle.close()") < leave.indexOf("onBack()"))
-        val save = editor.section("fun save()", "val filePicker =")
+        val save = editor.section("fun save()", "CollapsingSettingsScaffold(")
         assertTrue(save.contains("if (lifecycle.closed || !canSave) return"))
-        val transfer = save.indexOf("lifecycle.imports.transfer(draft.localFilePath)")
-        assertTrue("A successful local save transfers import ownership", transfer >= 0)
-        assertTrue("Ownership transfers before navigation closes the editor", save.indexOf("leave()", transfer) > transfer)
+        // Local add now persists a LOCAL_ONNX config (no GGUF path / import transfer).
+        assertTrue(save.contains("type = EmbeddingModelType.LOCAL_ONNX"))
+        assertFalse(save.contains("lifecycle.imports.transfer(draft.localFilePath)"))
         assertTrue(save.contains("if (lifecycle.closed) return@testConnection"))
-        val picker = editor.section("val filePicker =", "CollapsingSettingsScaffold(")
-        assertTrue(picker.contains("uri == null || lifecycle.closed || isImporting"))
-        assertTrue(picker.contains("importEmbeddingGguf(context, uri, lifecycle.imports)"))
-        assertTrue(picker.contains("if (lifecycle.closed) return@launch"))
-        assertTrue(picker.contains("lifecycle.imports.discard(draft.localFilePath)"))
+        assertFalse(editor.contains("importEmbeddingGguf(context, uri, lifecycle.imports)"))
         assertFalse(editor.contains("File(path).delete()"))
         val lifecycle = readSettingsSource("EmbeddingEditorLifecycle.kt")
         val close = lifecycle.section("override fun close()", "internal suspend fun importEmbeddingGguf")

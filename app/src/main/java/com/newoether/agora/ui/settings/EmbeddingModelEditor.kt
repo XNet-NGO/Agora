@@ -32,6 +32,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +49,8 @@ import com.newoether.agora.R
 import com.newoether.agora.api.ProviderDefaults
 import com.newoether.agora.data.EmbeddingModelConfig
 import com.newoether.agora.data.EmbeddingModelType
+import com.newoether.agora.data.OnnxEmbeddingProvider
+import com.newoether.agora.data.OnnxModelBootstrap
 import com.newoether.agora.ui.components.AgoraDropdownMenu
 import com.newoether.agora.ui.components.AgoraDropdownMenuItem
 import com.newoether.agora.ui.components.rememberUnsavedChangesBack
@@ -56,7 +59,9 @@ import com.newoether.agora.util.Constants
 import com.newoether.agora.viewmodel.ChatViewModel
 import com.newoether.agora.viewmodel.EmbeddingCacheRowSnapshot
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** A preset (provider name, base URL, known model ids) for the remote embedding editor. */
 internal data class EmbeddingProviderPreset(
@@ -69,37 +74,44 @@ internal data class EmbeddingProviderPreset(
     val custom: Boolean = false,
 )
 
-internal fun embeddingProviderPresets(): List<EmbeddingProviderPreset> = listOf(
-    EmbeddingProviderPreset(
-        Constants.PROVIDER_OPENAI,
-        ProviderDefaults.embeddingBaseUrl(Constants.PROVIDER_OPENAI),
-        listOf("text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"),
-    ),
-    EmbeddingProviderPreset("Mistral", ProviderDefaults.embeddingBaseUrl("Mistral"), listOf("mistral-embed")),
-    EmbeddingProviderPreset(
-        "Voyage AI",
-        ProviderDefaults.embeddingBaseUrl("Voyage AI"),
-        listOf("voyage-3-large", "voyage-3-lite", "voyage-code-3"),
-    ),
-    EmbeddingProviderPreset(
-        "SiliconFlow",
-        ProviderDefaults.embeddingBaseUrl("SiliconFlow"),
-        listOf("BAAI/bge-m3", "BAAI/bge-large-en-v1.5"),
-    ),
-    EmbeddingProviderPreset(
-        Constants.PROVIDER_OPEN_ROUTER,
-        ProviderDefaults.embeddingBaseUrl(Constants.PROVIDER_OPEN_ROUTER),
-        listOf("openai/text-embedding-3-small", "openai/text-embedding-3-large"),
-    ),
-    EmbeddingProviderPreset(
-        Constants.PROVIDER_OLLAMA,
-        ProviderDefaults.embeddingBaseUrl(Constants.PROVIDER_OLLAMA),
-        emptyList(),
-        editableUrl = true,
-        needsKey = false,
-    ),
-    EmbeddingProviderPreset("Custom", "", emptyList(), editableUrl = true, custom = true),
-)
+/** Known embedding model ids seeded per provider (unioned with dynamically-fetched ids). */
+private fun seedEmbeddingModels(name: String): List<String> = when (name) {
+    Constants.PROVIDER_OPENAI ->
+        listOf("text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002")
+    Constants.PROVIDER_GOOGLE -> listOf("text-embedding-004", "gemini-embedding-001")
+    Constants.PROVIDER_OPEN_ROUTER ->
+        listOf("openai/text-embedding-3-small", "openai/text-embedding-3-large")
+    "Mistral" -> listOf("mistral-embed")
+    "Voyage AI" -> listOf("voyage-3-large", "voyage-3-lite", "voyage-code-3")
+    "SiliconFlow" -> listOf("BAAI/bge-m3", "BAAI/bge-large-en-v1.5")
+    else -> emptyList()
+}
+
+/**
+ * Remote embedding providers. Lists every default provider (the same built-in set as chat/live, so
+ * the picker is complete) plus embedding specialists (Mistral, Voyage, SiliconFlow) and a Custom
+ * entry. Known embedding ids are seeded per provider and unioned with the provider's live fetched
+ * models in the editor.
+ */
+internal fun embeddingProviderPresets(): List<EmbeddingProviderPreset> {
+    val embeddingSpecialists = listOf("Mistral", "Voyage AI", "SiliconFlow")
+    // OpenAI first (most common embedding provider), then the rest of the built-in defaults, then
+    // embedding specialists not already present.
+    val ordered = listOf(Constants.PROVIDER_OPENAI) +
+        BuiltInRemoteProviders.filter { it != Constants.PROVIDER_OPENAI } +
+        embeddingSpecialists
+    val defaultNames = ordered.distinct()
+    val builtIns = defaultNames.map { name ->
+        EmbeddingProviderPreset(
+            name = name,
+            baseUrl = ProviderDefaults.embeddingBaseUrl(name),
+            models = seedEmbeddingModels(name),
+            editableUrl = name == Constants.PROVIDER_OLLAMA,
+            needsKey = name != Constants.PROVIDER_OLLAMA,
+        )
+    }
+    return builtIns + EmbeddingProviderPreset("Custom", "", emptyList(), editableUrl = true, custom = true)
+}
 
 /** Which model the editor page is showing; `null` route means the search page itself. */
 internal data class EmbeddingEditorRoute(
@@ -159,7 +171,6 @@ internal fun EmbeddingModelEditor(
     val lifecycle = remember(initial.id) { EmbeddingEditorLifecycle() }
     var isTesting by remember(initial.id) { mutableStateOf(false) }
     var isImporting by remember(initial.id) { mutableStateOf(false) }
-    var showGgufError by remember(initial.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -182,6 +193,16 @@ internal fun EmbeddingModelEditor(
     val availableModels by viewModel.settings.availableModels.collectAsState()
     val customProviders by viewModel.settings.customProviders.collectAsState()
     val providerBaseUrls by viewModel.settings.providerBaseUrls.collectAsState()
+    // Trigger a fingerprint-gated model fetch so dynamic embedding models load when this editor is
+    // opened directly (the Models page is otherwise the only entry that fetches).
+    val lastFingerprint by viewModel.settings.lastModelsFetchFingerprint.collectAsState()
+    LaunchedEffect(Unit) {
+        if (viewModel.computeProviderFingerprint() != lastFingerprint) viewModel.fetchAvailableModels()
+    }
+    // On-device ONNX embedding model install state (local option is ONNX, not GGUF).
+    var onnxInstalled by remember { mutableStateOf(OnnxModelBootstrap.isInstalled(context)) }
+    var onnxBusy by remember { mutableStateOf(false) }
+    var onnxProgress by remember { mutableStateOf<String?>(null) }
     val suggestedModels = remember(preset.name, availableModels, customProviders) {
         val fromProvider = buildProviderModels(availableModels, customProviders, providerBaseUrls)
             .firstOrNull { it.name.equals(preset.name, ignoreCase = true) }
@@ -194,11 +215,11 @@ internal fun EmbeddingModelEditor(
         usingSavedKey -> savedKey!!.key
         else -> draft.apiKey.trim()
     }
-    val defaultName = if (isRemote) draft.modelName.trim() else draft.localFileName.removeSuffix(".gguf")
+    val defaultName = if (isRemote) draft.modelName.trim() else "On-device (ONNX)"
     val canSave = !isTesting && !isImporting && when {
         !isNew -> (draft.name.isNotBlank() || defaultName.isNotBlank())
         isRemote -> draft.modelName.isNotBlank() && draft.baseUrl.isNotBlank()
-        else -> draft.localFilePath.isNotBlank()
+        else -> onnxInstalled
     }
 
     val leave = {
@@ -224,11 +245,9 @@ internal fun EmbeddingModelEditor(
                 EmbeddingModelConfig(
                     name = finalName,
                     type = EmbeddingModelType.LOCAL_ONNX,
-                    localFilePath = draft.localFilePath,
                     batchSize = batch,
                 ),
             )
-            lifecycle.imports.transfer(draft.localFilePath)
             leave()
             return
         }
@@ -261,29 +280,6 @@ internal fun EmbeddingModelEditor(
                 viewModel.ragManager.updateEmbeddingModel(initial.id, finalName, batch, effectiveKey)
             }
             leave()
-        }
-    }
-
-    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null || lifecycle.closed || isImporting) return@rememberLauncherForActivityResult
-        isImporting = true
-        scope.launch {
-            try {
-                val imported = importEmbeddingGguf(context, uri, lifecycle.imports)
-                if (lifecycle.closed) return@launch
-                if (imported == null) {
-                    showGgufError = true
-                } else {
-                    lifecycle.imports.discard(draft.localFilePath)
-                    draft = draft.copy(localFilePath = imported.path, localFileName = imported.displayName)
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                if (!lifecycle.closed) showGgufError = true
-            } finally {
-                if (!lifecycle.closed) isImporting = false
-            }
         }
     }
 
@@ -500,12 +496,57 @@ internal fun EmbeddingModelEditor(
                 SettingsGroup(
                     title = stringResource(R.string.embedding_model_file),
                     items = listOf {
-                        ModelImportItem(
-                            title = draft.localFileName.ifBlank { stringResource(R.string.embedding_import_title) },
-                            description = stringResource(R.string.embedding_import_desc),
-                            icon = Icons.Default.AutoAwesome,
-                            importing = isImporting,
-                            onClick = { filePicker.launch(arrayOf("*/*")) },
+                        SettingsItem(
+                            headlineContent = { Text(stringResource(R.string.onnx_embed_title)) },
+                            supportingContent = {
+                                Text(
+                                    when {
+                                        onnxBusy -> stringResource(
+                                            R.string.onnx_embed_downloading,
+                                            onnxProgress ?: "",
+                                        )
+                                        onnxInstalled -> stringResource(R.string.onnx_embed_added)
+                                        else -> stringResource(R.string.onnx_embed_desc)
+                                    },
+                                )
+                            },
+                            leadingContent = {
+                                Icon(Icons.Default.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary)
+                            },
+                            trailingContent = {
+                                when {
+                                    onnxBusy -> CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        strokeWidth = 2.dp,
+                                    )
+                                    onnxInstalled -> Icon(
+                                        Icons.Default.Check,
+                                        null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                    else -> Text(
+                                        stringResource(R.string.onnx_embed_download),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            },
+                            modifier = Modifier.clickable(enabled = !onnxBusy && !onnxInstalled) {
+                                onnxBusy = true
+                                scope.launch {
+                                    val ok = withContext(Dispatchers.IO) {
+                                        OnnxModelBootstrap.setup(context) { msg -> onnxProgress = msg }
+                                    }
+                                    onnxBusy = false
+                                    onnxProgress = null
+                                    if (ok) {
+                                        onnxInstalled = true
+                                        OnnxEmbeddingProvider.reset()
+                                    } else {
+                                        viewModel.emitSnackbar(context.getString(R.string.onnx_embed_failed))
+                                    }
+                                }
+                            },
                         )
                     },
                 )
@@ -561,16 +602,6 @@ internal fun EmbeddingModelEditor(
             }
         }
         if (showDocFab) Spacer(modifier = Modifier.height(80.dp))
-    }
-
-    if (showGgufError) {
-        AlertDialog(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            onDismissRequest = { showGgufError = false },
-            title = { Text(stringResource(R.string.import_invalid_gguf_title), fontWeight = FontWeight.Bold) },
-            text = { Text(stringResource(R.string.import_invalid_gguf_desc)) },
-            confirmButton = { TextButton(onClick = { showGgufError = false }) { Text(stringResource(R.string.ok)) } },
-        )
     }
 }
 

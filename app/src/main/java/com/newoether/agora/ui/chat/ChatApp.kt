@@ -656,11 +656,16 @@ fun ChatApp(
                     )
                 },
             ) {
+                androidx.compose.foundation.layout.Column {
+                    com.newoether.agora.ui.chat.bottombar.LiveVoiceTranscriptBar()
                                 ChatBottomBar(
                         submissionController = viewModel.conversationComposerSubmission,
                         composerOwnerId = composerOwnerId,
                         composerController = viewModel.conversationComposer,
                         composerSnapshot = composerSnapshot,
+                        liveVoiceButton = {
+                            com.newoether.agora.ui.chat.bottombar.ComposerLiveVoiceButton(viewModel)
+                        },
                         onStopGeneration = {
                             haptics.interrupt()
                             viewModel.stopGeneration()
@@ -745,6 +750,7 @@ fun ChatApp(
                         onRemoveQueuedSend = viewModel::removeQueuedSend, onSendQueuedNow = viewModel::sendQueuedNow,
                         isStopping = isStopping,
                     )
+                }
             }
             }
         }

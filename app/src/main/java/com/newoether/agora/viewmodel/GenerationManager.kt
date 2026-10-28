@@ -72,6 +72,9 @@ class GenerationManager(
         },
     )
     private val providerPassEffects = ProviderPassEffectExecutor()
+    /** A live-voice tool bridge over the SAME MCP-including executor normal generation uses. */
+    fun buildLiveToolBridge(ctx: GenerationContext): com.newoether.agora.voice.live.LiveToolBridge =
+        LiveVoiceToolBridge(toolExecutor, ctx)
     private val toolBatchEffects = GenerationToolBatchEffectExecutor(toolExecutor)
     private val toolRoundBuilder = GenerationToolRoundBuilder()
     private val runFinalizationExecutor = GenerationRunFinalizationExecutor(conversations)

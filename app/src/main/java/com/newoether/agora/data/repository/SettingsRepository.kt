@@ -155,6 +155,8 @@ class SettingsRepository(
     val manualSearchMethod: StateFlow<String> = publication.hot(settingsManager.manualSearchMethod, "keyword")
     val embeddingModels: StateFlow<List<EmbeddingModelConfig>> = publication.hot(settingsManager.embeddingModels, emptyList())
     val activeEmbeddingModelId: StateFlow<String> = publication.hot(settingsManager.activeEmbeddingModelId, "")
+    val liveVoiceConfig: StateFlow<com.newoether.agora.voice.live.LiveVoiceConfig> =
+        publication.hot(settingsManager.liveVoiceConfig, com.newoether.agora.voice.live.LiveVoiceConfig())
     val appLanguage: StateFlow<String> = publication.hot(settingsManager.appLanguage, "system")
     val webSearchEnabled: StateFlow<Boolean> = publication.hot(settingsManager.webSearchEnabled, false)
     val webSearchProvider: StateFlow<String> = publication.hot(settingsManager.webSearchProvider, "duckduckgo")
@@ -766,6 +768,9 @@ class SettingsRepository(
     }
     suspend fun saveEmbeddingModels(models: List<EmbeddingModelConfig>) = settingsManager.saveEmbeddingModels(models)
     suspend fun setActiveEmbeddingModelId(id: String) = settingsManager.setActiveEmbeddingModelId(id)
+    fun setLiveVoiceConfig(config: com.newoether.agora.voice.live.LiveVoiceConfig) = scope.launch {
+        settingsManager.saveLiveVoiceConfig(config)
+    }
     suspend fun saveAutoBackupEnabled(enabled: Boolean) = settingsManager.saveAutoBackupEnabled(enabled)
     suspend fun saveAutoBackupPeriodHours(hours: Int) = settingsManager.saveAutoBackupPeriodHours(hours)
     suspend fun saveAutoBackupCategories(categories: String) = settingsManager.saveAutoBackupCategories(categories)

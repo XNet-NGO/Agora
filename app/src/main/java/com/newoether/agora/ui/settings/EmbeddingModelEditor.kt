@@ -88,20 +88,23 @@ private fun seedEmbeddingModels(name: String): List<String> = when (name) {
 }
 
 /**
- * Remote embedding providers. Lists every default provider (the same built-in set as chat/live, so
- * the picker is complete) plus embedding specialists (Mistral, Voyage, SiliconFlow) and a Custom
- * entry. Known embedding ids are seeded per provider and unioned with the provider's live fetched
- * models in the editor.
+ * Remote embedding providers. The embedding client speaks the OpenAI-compatible POST /embeddings
+ * protocol, so this lists only providers with a real OpenAI-style embeddings endpoint (OpenAI,
+ * Mistral, Voyage AI, SiliconFlow, OpenRouter, Ollama) plus Custom. Providers without an
+ * OpenAI-compatible embeddings API (e.g. Google, Anthropic) are intentionally excluded — selecting
+ * them would just fail to connect. Known embedding ids are seeded per provider and unioned with the
+ * provider's live fetched models in the editor.
  */
 internal fun embeddingProviderPresets(): List<EmbeddingProviderPreset> {
-    val embeddingSpecialists = listOf("Mistral", "Voyage AI", "SiliconFlow")
-    // OpenAI first (most common embedding provider), then the rest of the built-in defaults, then
-    // embedding specialists not already present.
-    val ordered = listOf(Constants.PROVIDER_OPENAI) +
-        BuiltInRemoteProviders.filter { it != Constants.PROVIDER_OPENAI } +
-        embeddingSpecialists
-    val defaultNames = ordered.distinct()
-    val builtIns = defaultNames.map { name ->
+    val names = listOf(
+        Constants.PROVIDER_OPENAI,
+        "Mistral",
+        "Voyage AI",
+        "SiliconFlow",
+        Constants.PROVIDER_OPEN_ROUTER,
+        Constants.PROVIDER_OLLAMA,
+    )
+    val builtIns = names.map { name ->
         EmbeddingProviderPreset(
             name = name,
             baseUrl = ProviderDefaults.embeddingBaseUrl(name),
@@ -208,7 +211,11 @@ internal fun EmbeddingModelEditor(
             .firstOrNull { it.name.equals(preset.name, ignoreCase = true) }
             ?.models
             .orEmpty()
-        (preset.models + fromProvider).distinct()
+        // Fetched ids are stored provider-prefixed ("Google:text-embedding-004"); strip the prefix
+        // so the id sent to the embeddings API is the bare model name (a prefixed id fails the
+        // connection with "model/key/endpoint wrong"). Seeds are already bare.
+        val normalizedFromProvider = fromProvider.map { it.substringAfter(':', it) }
+        (preset.models + normalizedFromProvider).distinct()
     }
     val effectiveKey = when {
         !preset.needsKey && isNew -> ""

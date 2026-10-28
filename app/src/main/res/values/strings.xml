@@ -261,7 +261,7 @@
     <string name="embedding_edit_model">Edit Model</string>
     <string name="embedding_choose_type">Choose Model Type</string>
     <string name="embedding_type_remote_desc">Call an embedding API such as OpenAI, Voyage AI, or Ollama.</string>
-    <string name="embedding_type_local_desc">Run a GGUF embedding model on this device.</string>
+    <string name="embedding_type_local_desc">Download and run an on-device ONNX embedding model.</string>
     <string name="embedding_provider_custom">Custom</string>
     <string name="embedding_connection">Connection</string>
     <string name="embedding_general">General</string>

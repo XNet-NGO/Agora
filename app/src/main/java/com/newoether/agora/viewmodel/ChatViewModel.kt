@@ -17,6 +17,7 @@ import com.newoether.agora.data.replaceCustomProviderIdsForDisplay
 
 
 import com.newoether.agora.data.repository.ConversationRepository
+import com.newoether.agora.data.repository.persistVoiceExchange
 import com.newoether.agora.data.repository.observeConversationTodo
 import com.newoether.agora.data.repository.observeSubagents
 import com.newoether.agora.data.repository.observeParentConversationId
@@ -221,6 +222,27 @@ class ChatViewModel(
             askUserEnabled = false,
         )
         return generationManager.buildLiveToolBridge(ctx)
+    }
+
+    /**
+     * Wire the Live Voice session's transcript persistence into the CURRENT chat conversation
+     * (AIOPE messageSink parity). Each completed spoken exchange is written as a terminal Run of
+     * PLAIN-TEXT user/assistant messages via [ConversationRepository.persistVoiceExchange], which
+     * no-ops if a live Run already owns the conversation. Plain text keeps the persisted turns valid
+     * for the Gemini request builder. Call before starting a session.
+     */
+    fun installVoiceMessageSink() {
+        com.newoether.agora.voice.live.LiveVoiceSession.controller.messageSink = { userText, assistantText ->
+            val conversationId = currentConversationId.value
+            if (conversationId != null) {
+                val model = currentActiveModel.value.ifBlank { null }
+                viewModelScope.launch {
+                    runCatching {
+                        convRepo.persistVoiceExchange(conversationId, userText, assistantText, model)
+                    }
+                }
+            }
+        }
     }
     private val semanticSearchService by lazy {
         SemanticSearchService(

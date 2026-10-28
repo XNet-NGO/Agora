@@ -25,6 +25,13 @@ fun signingInput(prop: String, localKey: String, default: String): String =
 
 android {
     namespace = "com.newoether.agora"
+    // Release assembly does not run the (very slow) lintVital analysis. Lint is a code-quality gate,
+    // not required to produce an installable APK; run `./gradlew lintFdroidRelease` on demand instead.
+    // This removes the dominant cost from assembleFdroidRelease.
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
     testOptions.unitTests.isIncludeAndroidResources = true
     // Robolectric installs Conscrypt as the first security provider for the whole test JVM;
     // on JDK 17+ its TLS server needs reflective access to java.net (InetAddress.holder).

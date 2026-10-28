@@ -42,10 +42,24 @@ class LiveVoiceAudioManager(
     private val playbackQueue = LinkedBlockingQueue<ByteArray>()
     private var sharedSessionId = 0
 
+    // Half-duplex gate: while the model is speaking (playback active), suppress sending mic audio
+    // so the open speakerphone output does not feed back into VOICE_COMMUNICATION capture and get
+    // transcribed as the user interrupting — the cause of the model "talking over" / cutting itself
+    // off after a few lines on speakerphone. [modelSpeakingUntil] holds the gate briefly past the
+    // last played chunk to cover the speaker's acoustic tail.
+    @Volatile private var modelSpeakingUntil = 0L
+
+    private fun micGatedNow(): Boolean =
+        playbackQueue.isNotEmpty() || System.currentTimeMillis() < modelSpeakingUntil
+
     fun setWebSocket(ws: WebSocket) { webSocket = ws }
 
     /** Clear queued playback on interruption / barge-in. */
-    fun clearPlayback() { playbackQueue.clear() }
+    fun clearPlayback() {
+        playbackQueue.clear()
+        // Barge-in: the user is interrupting, so open the mic gate immediately.
+        modelSpeakingUntil = 0L
+    }
 
     @Synchronized
     fun startCapture() {
@@ -80,19 +94,25 @@ class LiveVoiceAudioManager(
         if (AcousticEchoCanceler.isAvailable()) {
             aec = AcousticEchoCanceler.create(sharedSessionId)?.apply { enabled = true }
         }
-        // Rebuild playback track to share the session id for AEC pairing.
-        if (audioTrack != null && audioTrack?.audioSessionId != sharedSessionId) {
+        rec.startRecording()
+        // Start playback ONCE, now that the capture session id is known, so the AudioTrack is built
+        // with the shared session for AEC pairing. Rebuilding the track after it already started
+        // caused an underrun storm (track torn down + recreated mid-stream) that broke playback and
+        // made the model "stutter/hang on its own output". If playback somehow started earlier with
+        // the wrong session, replace it once here.
+        if (audioTrack == null) {
+            startPlayback()
+        } else if (audioTrack?.audioSessionId != sharedSessionId) {
             playbackJob?.cancel(); playbackJob = null
-            audioTrack?.stop(); audioTrack?.release(); audioTrack = null
+            runCatching { audioTrack?.stop() }; runCatching { audioTrack?.release() }; audioTrack = null
             playbackQueue.clear(); startPlayback()
         }
-        rec.startRecording()
         val sampleRate = rate
         captureJob = CoroutineScope(Dispatchers.IO).launch {
             val buf = ByteArray(bufSize)
             while (isActive) {
                 val read = audioRecord?.read(buf, 0, buf.size) ?: break
-                if (read > 0) {
+                if (read > 0 && !micGatedNow()) {
                     val encoded = Base64.encodeToString(buf.copyOf(read), Base64.NO_WRAP)
                     webSocket?.send(
                         """{"realtimeInput":{"audio":{"mimeType":"audio/pcm;rate=$sampleRate","data":"$encoded"}}}""",
@@ -141,7 +161,7 @@ class LiveVoiceAudioManager(
                     .setSampleRate(outputRate)
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build(),
             )
-            .setBufferSizeInBytes(bufSize * 4)
+            .setBufferSizeInBytes(bufSize * 8)
             .setTransferMode(AudioTrack.MODE_STREAM)
         if (sharedSessionId != 0) builder.setSessionId(sharedSessionId)
         audioTrack = builder.build().apply { play() }
@@ -153,7 +173,14 @@ class LiveVoiceAudioManager(
         }
     }
 
-    fun playAudio(pcmData: ByteArray) { playbackQueue.offer(pcmData) }
+    fun playAudio(pcmData: ByteArray) {
+        playbackQueue.offer(pcmData)
+        // Hold the mic gate for this chunk's playback duration (24 kHz, 16-bit mono => bytes/48 ms)
+        // plus a ~600 ms acoustic tail so the speaker's decay doesn't leak back into capture.
+        val chunkMs = pcmData.size / 48L
+        val until = System.currentTimeMillis() + chunkMs + 600L
+        if (until > modelSpeakingUntil) modelSpeakingUntil = until
+    }
 
     @Synchronized
     fun stop() {

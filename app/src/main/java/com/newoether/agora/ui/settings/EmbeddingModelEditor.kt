@@ -89,15 +89,16 @@ private fun seedEmbeddingModels(name: String): List<String> = when (name) {
 
 /**
  * Remote embedding providers. The embedding client speaks the OpenAI-compatible POST /embeddings
- * protocol, so this lists only providers with a real OpenAI-style embeddings endpoint (OpenAI,
- * Mistral, Voyage AI, SiliconFlow, OpenRouter, Ollama) plus Custom. Providers without an
- * OpenAI-compatible embeddings API (e.g. Google, Anthropic) are intentionally excluded — selecting
- * them would just fail to connect. Known embedding ids are seeded per provider and unioned with the
- * provider's live fetched models in the editor.
+ * protocol, so this lists only providers with a real OpenAI-style embeddings endpoint: OpenAI,
+ * Google (its /v1beta/openai compatibility endpoint), Mistral, Voyage AI, SiliconFlow, OpenRouter,
+ * Ollama, plus Custom. Providers without an OpenAI-compatible embeddings API (e.g. Anthropic) are
+ * intentionally excluded — selecting them would just fail to connect. Known embedding ids are
+ * seeded per provider and unioned with the provider's live fetched models in the editor.
  */
 internal fun embeddingProviderPresets(): List<EmbeddingProviderPreset> {
     val names = listOf(
         Constants.PROVIDER_OPENAI,
+        Constants.PROVIDER_GOOGLE,
         "Mistral",
         "Voyage AI",
         "SiliconFlow",

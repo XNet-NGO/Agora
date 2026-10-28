@@ -22,6 +22,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,6 +59,16 @@ fun SettingsLiveVoicePage(viewModel: ChatViewModel, onBack: () -> Unit) {
     fun update(newConfig: LiveVoiceConfig) {
         config = newConfig
         viewModel.settings.setLiveVoiceConfig(newConfig)
+    }
+
+    // Live models are fetched dynamically; the Models page isn't the only entry to this data, so
+    // trigger the same fingerprint-gated sync here (otherwise opening Live Voice directly shows only
+    // the seeded ids and never the provider's actual bidiGenerateContent models).
+    val lastFingerprint by viewModel.settings.lastModelsFetchFingerprint.collectAsState()
+    LaunchedEffect(Unit) {
+        if (viewModel.computeProviderFingerprint() != lastFingerprint) {
+            viewModel.fetchAvailableModels()
+        }
     }
 
     val controller = com.newoether.agora.voice.live.LiveVoiceSession.controller

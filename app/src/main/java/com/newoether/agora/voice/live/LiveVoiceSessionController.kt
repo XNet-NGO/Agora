@@ -119,10 +119,13 @@ class LiveVoiceSessionController {
                         turns.emit(LiveVoiceTurn.AssistantTranscript(event.text))
                     }
                     is LiveStreamEvent.TurnComplete -> {
-                        // End of the assistant's reply: persist this completed exchange, then start
-                        // the next user utterance fresh so transcripts don't run together.
+                        // End of the assistant's reply: persist this completed exchange, then clear
+                        // BOTH running transcripts. The persisted chat messages are now the record;
+                        // the live bar should only ever show the CURRENT in-progress turn, otherwise
+                        // the finished turn renders twice (once in the bar, once as a chat message).
                         flushExchange()
                         _userTranscript.value = ""
+                        _assistantTranscript.value = ""
                     }
                     else -> Unit // AudioChunk handled by the audio manager
                 }

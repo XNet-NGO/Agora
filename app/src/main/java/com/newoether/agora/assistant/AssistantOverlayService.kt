@@ -92,7 +92,18 @@ class AssistantOverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         createChannel()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // Android 14+: declare microphone + camera up front so Live Voice (mic) and the camera
+            // video source can capture from this background service. mediaProjection is added later
+            // (after screen-capture consent) in handleScreenCaptureConsent().
+            startForeground(
+                NOTIFICATION_ID,
+                buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA,
+            )
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
                 buildNotification(),
@@ -124,6 +135,8 @@ class AssistantOverlayService : Service() {
                     NOTIFICATION_ID,
                     buildNotification(),
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION,
                 )
             }
@@ -153,8 +166,12 @@ class AssistantOverlayService : Service() {
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             // Collapsed: not focusable (so touches elsewhere pass through). When expanded we
-            // clear NOT_FOCUSABLE so the EditText can receive the soft keyboard.
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            // clear NOT_FOCUSABLE so the EditText can receive the soft keyboard. NOT_TOUCH_MODAL
+            // is kept in BOTH states so touches OUTSIDE the overlay bounds always reach the app
+            // underneath (without it, a focusable overlay becomes modal and swallows the whole
+            // screen's taps/swipes).
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -378,8 +395,28 @@ class AssistantOverlayService : Service() {
             }
             val key = container.settingsRepository.resolveActiveKey(config.provider).orEmpty()
             if (key.isBlank()) { responseView?.text = getString(R.string.live_voice_needs_key); return@launch }
+            responseView?.text = getString(R.string.live_voice_connecting)
             controller.start(applicationContext, config, key)
             updateLiveButtons()
+            observeLiveSession()
+        }
+    }
+
+    private var liveObserveStarted = false
+    private fun observeLiveSession() {
+        if (liveObserveStarted) return
+        liveObserveStarted = true
+        val controller = com.newoether.agora.voice.live.LiveVoiceSession.controller
+        scope.launch {
+            controller.turns.collect { turn ->
+                if (turn is com.newoether.agora.voice.live.LiveVoiceTurn.Error) {
+                    responseView?.text = getString(R.string.live_voice_error, turn.message)
+                    updateLiveButtons()
+                }
+            }
+        }
+        scope.launch {
+            controller.state.collect { updateLiveButtons() }
         }
     }
 

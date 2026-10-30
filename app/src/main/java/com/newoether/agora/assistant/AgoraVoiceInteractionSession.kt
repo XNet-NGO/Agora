@@ -82,8 +82,16 @@ class AgoraVoiceInteractionSession(context: Context) :
         if (launched) return
         launched = true
         try {
-            Log.i(TAG, "launch turn: screenChars=${capturedScreen.length}")
-            AssistInvocation.launch(context, capturedScreen)
+            Log.i(TAG, "assist gesture -> show overlay (screenChars=${capturedScreen.length})")
+            // The assist gesture opens the floating overlay (Live Voice + text controls) rather than
+            // auto-firing a text-model turn. The user drives it from there (speak, type, or stream
+            // camera/screen).
+            if (AssistantOverlayService.canDraw(context)) {
+                AssistantOverlayService.start(context)
+            } else {
+                // No overlay permission: fall back to the legacy one-shot turn.
+                AssistInvocation.launch(context, capturedScreen)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "launch failed: ${e.message}", e)
         }

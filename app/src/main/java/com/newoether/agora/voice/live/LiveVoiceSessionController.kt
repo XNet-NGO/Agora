@@ -47,6 +47,11 @@ class LiveVoiceSessionController {
     private val _state = MutableStateFlow(LiveVoiceState.IDLE)
     val state: StateFlow<LiveVoiceState> = _state.asStateFlow()
 
+    // Live video streaming (camera/screen) over the active session. Null when no source is active.
+    private var videoManager: VideoStreamManager? = null
+    private val _videoSource = MutableStateFlow(LiveVideoSource.NONE)
+    val videoSource: StateFlow<LiveVideoSource> = _videoSource.asStateFlow()
+
     val turns = MutableSharedFlow<LiveVoiceTurn>(replay = 0, extraBufferCapacity = 64)
 
     // Accumulated running transcripts for live display. Reset on each new session.
@@ -139,9 +144,47 @@ class LiveVoiceSessionController {
         streamer?.endTurn()
     }
 
+    /** Lazily build the video manager bound to the active streamer. */
+    @Synchronized
+    private fun ensureVideoManager(context: android.content.Context): VideoStreamManager {
+        val existing = videoManager
+        if (existing != null) return existing
+        val mgr = VideoStreamManager(context.applicationContext) { b64 -> streamer?.sendVideoFrame(b64) }
+        videoManager = mgr
+        return mgr
+    }
+
+    /** Start streaming camera frames to the model (no-op unless a session is active). */
+    @Synchronized
+    fun startCameraStream(context: android.content.Context, front: Boolean) {
+        if (_state.value != LiveVoiceState.ACTIVE) return
+        ensureVideoManager(context).startCamera(front)
+        _videoSource.value = LiveVideoSource.CAMERA
+    }
+
+    /** Start streaming device-screen frames; [projection] comes from the consent Activity. */
+    @Synchronized
+    fun startScreenStream(context: android.content.Context, projection: android.media.projection.MediaProjection) {
+        if (_state.value != LiveVoiceState.ACTIVE) {
+            runCatching { projection.stop() }
+            return
+        }
+        ensureVideoManager(context).startScreen(projection)
+        _videoSource.value = LiveVideoSource.SCREEN
+    }
+
+    /** Stop any active video source (keeps the audio session running). */
+    @Synchronized
+    fun stopVideoStream() {
+        videoManager?.stop()
+        _videoSource.value = LiveVideoSource.NONE
+    }
+
     @Synchronized
     fun stop() {
         flushExchange()
+        videoManager?.stop(); videoManager = null
+        _videoSource.value = LiveVideoSource.NONE
         collectJob?.cancel(); collectJob = null
         streamer?.stop(); streamer = null
         audio = null

@@ -35,6 +35,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import com.newoether.agora.MainActivity
+import com.newoether.agora.AgoraApplication
 import com.newoether.agora.R
 import com.newoether.agora.stt.SherpaSttBootstrap
 import com.newoether.agora.stt.VoiceInputManager
@@ -73,6 +74,9 @@ class AssistantOverlayService : Service() {
     private var responseView: TextView? = null
     private var inputField: EditText? = null
     private var micButton: ImageButton? = null
+    private var liveButton: ImageButton? = null
+    private var cameraButton: ImageButton? = null
+    private var screenButton: ImageButton? = null
     private var sendButton: Button? = null
 
     private var expanded = false
@@ -98,6 +102,39 @@ class AssistantOverlayService : Service() {
             startForeground(NOTIFICATION_ID, buildNotification())
         }
         if (canDraw(this)) addOverlay() else stopSelf()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_START_SCREEN_CAPTURE) {
+            handleScreenCaptureConsent()
+        }
+        return START_STICKY
+    }
+
+    private fun handleScreenCaptureConsent() {
+        val data = pendingProjectionData
+        val code = pendingProjectionResultCode
+        pendingProjectionData = null
+        if (data == null || code == 0) return
+        // Android 14+: the MediaProjection must run under a mediaProjection-typed FGS started AFTER
+        // consent. Re-promote this foreground service to include the mediaProjection type.
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    buildNotification(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION,
+                )
+            }
+        }
+        val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+        val projection = runCatching { mpm.getMediaProjection(code, data) }.getOrNull()
+        if (projection == null) {
+            responseView?.text = getString(R.string.live_voice_start_first); return
+        }
+        com.newoether.agora.voice.live.LiveVoiceSession.controller.startScreenStream(applicationContext, projection)
+        updateLiveButtons()
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
@@ -237,6 +274,43 @@ class AssistantOverlayService : Service() {
         inputRow.addView(micButton)
         inputRow.addView(inputField)
         inputRow.addView(sendButton)
+
+        // Live Voice + video streaming controls.
+        val liveRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4), 0, 0)
+        }
+        liveButton = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_call)
+            background = null
+            setColorFilter(Color.WHITE)
+            setOnClickListener { toggleLiveVoice() }
+        }
+        cameraButton = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_camera)
+            background = null
+            setColorFilter(Color.WHITE)
+            setOnClickListener { toggleCameraStream() }
+        }
+        screenButton = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_crop)
+            background = null
+            setColorFilter(Color.WHITE)
+            setOnClickListener { toggleScreenStream() }
+        }
+        val liveHint = TextView(this).apply {
+            text = getString(R.string.live_voice_title)
+            setTextColor(0xFF9E9E9E.toInt())
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { marginStart = dp(8) }
+        }
+        liveRow.addView(liveButton)
+        liveRow.addView(liveHint)
+        liveRow.addView(cameraButton)
+        liveRow.addView(screenButton)
+        col.addView(liveRow)
         col.addView(inputRow)
 
         panel = col
@@ -279,6 +353,78 @@ class AssistantOverlayService : Service() {
                 .edit().putBoolean(KEY_OVERLAY_ENABLED, false).apply()
         }
         stopSelf()
+    }
+
+    // ── Live Voice + video streaming (overlay-driven) ──────────────────────────
+    private fun toggleLiveVoice() {
+        val controller = com.newoether.agora.voice.live.LiveVoiceSession.controller
+        if (controller.isActive) {
+            controller.stop()
+            updateLiveButtons()
+            return
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            responseView?.text = getString(R.string.assistant_voice_needs_mic)
+            runCatching { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            return
+        }
+        scope.launch {
+            val container = (applicationContext as AgoraApplication).awaitContainer() ?: return@launch
+            val config = container.settingsRepository.liveVoiceConfig.value
+            if (!config.enabled || config.model.isBlank()) {
+                responseView?.text = getString(R.string.live_voice_needs_key); return@launch
+            }
+            val key = container.settingsRepository.resolveActiveKey(config.provider).orEmpty()
+            if (key.isBlank()) { responseView?.text = getString(R.string.live_voice_needs_key); return@launch }
+            controller.start(applicationContext, config, key)
+            updateLiveButtons()
+        }
+    }
+
+    private fun toggleCameraStream() {
+        val controller = com.newoether.agora.voice.live.LiveVoiceSession.controller
+        if (!controller.isActive) { responseView?.text = getString(R.string.live_voice_start_first); return }
+        if (controller.videoSource.value == com.newoether.agora.voice.live.LiveVideoSource.CAMERA) {
+            controller.stopVideoStream(); updateLiveButtons(); return
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            responseView?.text = getString(R.string.assistant_voice_needs_mic)
+            runCatching { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            return
+        }
+        controller.startCameraStream(applicationContext, front = false)
+        updateLiveButtons()
+    }
+
+    private fun toggleScreenStream() {
+        val controller = com.newoether.agora.voice.live.LiveVoiceSession.controller
+        if (!controller.isActive) { responseView?.text = getString(R.string.live_voice_start_first); return }
+        if (controller.videoSource.value == com.newoether.agora.voice.live.LiveVideoSource.SCREEN) {
+            controller.stopVideoStream(); updateLiveButtons(); return
+        }
+        // Screen capture needs MediaProjection consent, which requires an Activity.
+        runCatching {
+            startActivity(
+                Intent(this, ProjectionConsentActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
+    }
+
+    /** Reflect active state in the control-row icons. */
+    private fun updateLiveButtons() {
+        val controller = com.newoether.agora.voice.live.LiveVoiceSession.controller
+        liveButton?.setColorFilter(if (controller.isActive) 0xFF66BB6A.toInt() else Color.WHITE)
+        val src = controller.videoSource.value
+        cameraButton?.setColorFilter(
+            if (src == com.newoether.agora.voice.live.LiveVideoSource.CAMERA) 0xFF66BB6A.toInt() else Color.WHITE,
+        )
+        screenButton?.setColorFilter(
+            if (src == com.newoether.agora.voice.live.LiveVideoSource.SCREEN) 0xFF66BB6A.toInt() else Color.WHITE,
+        )
     }
 
     private fun toggleStt() {
@@ -443,6 +589,10 @@ class AssistantOverlayService : Service() {
         // overlay turns the Settings toggle off and prevents the bubble from reappearing.
         private const val ASSISTANT_PREFS = "assistant"
         private const val KEY_OVERLAY_ENABLED = "overlay_enabled"
+        const val ACTION_START_SCREEN_CAPTURE = "com.newoether.agora.START_SCREEN_CAPTURE"
+        // Projection consent result handed from ProjectionConsentActivity to the running service.
+        @Volatile var pendingProjectionResultCode: Int = 0
+        @Volatile var pendingProjectionData: Intent? = null
         private val ACCENT = 0xFF1E88E5.toInt()
         private val PANEL_BG = 0xF21C1C1C.toInt()
 

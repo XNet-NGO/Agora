@@ -245,6 +245,8 @@
     <string name="live_voice_connecting">Connecting…</string>
     <string name="live_voice_stop">Stop session</string>
     <string name="live_voice_needs_key">No API key for the Live Voice provider. Add one in Settings.</string>
+    <string name="live_voice_title">Live Voice</string>
+    <string name="live_voice_start_first">Start Live Voice first to stream video.</string>
     <string name="embedding_base_url_label">Base URL</string>
     <string name="embedding_provider_label">Provider</string>
     <string name="embedding_api_key">API Key</string>

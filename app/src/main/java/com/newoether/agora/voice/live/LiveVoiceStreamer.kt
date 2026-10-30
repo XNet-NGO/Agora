@@ -246,6 +246,23 @@ class LiveVoiceStreamer(
         webSocket?.send(JSONObject().apply { put("realtimeInput", JSONObject().apply { put("text", text) }) }.toString())
     }
 
+    /**
+     * Send one video frame (camera or screen) as realtimeInput. The Live API treats it as turn input
+     * alongside audio (turnCoverage=TURN_INCLUDES_ALL_INPUT). [jpegBase64] is NO_WRAP base64 JPEG.
+     */
+    fun sendVideoFrame(jpegBase64: String, mimeType: String = "image/jpeg") {
+        webSocket?.send(
+            JSONObject().apply {
+                put(
+                    "realtimeInput",
+                    JSONObject().apply {
+                        put("video", JSONObject().apply { put("mimeType", mimeType); put("data", jpegBase64) })
+                    },
+                )
+            }.toString(),
+        )
+    }
+
     /** Signal end of the user's turn. */
     fun endTurn() {
         webSocket?.send("""{"clientContent":{"turnComplete":true}}""")

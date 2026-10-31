@@ -137,6 +137,11 @@ class LiveVoiceStreamer(
                         "generationConfig",
                         JSONObject().apply {
                             put("responseModalities", JSONArray().put("AUDIO"))
+                            // Extended-thinking live models reject setup (WS close 1007 "Thinking
+                            // level must be specified") unless a thinking level is provided.
+                            if (googleModelId().contains("thinking", ignoreCase = true)) {
+                                put("thinkingConfig", JSONObject().apply { put("thinkingLevel", "HIGH") })
+                            }
                             put(
                                 "speechConfig",
                                 JSONObject().apply {

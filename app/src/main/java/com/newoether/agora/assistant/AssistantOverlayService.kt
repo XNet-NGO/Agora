@@ -281,6 +281,16 @@ class AssistantOverlayService : Service() {
             setOnEditorActionListener { _, actionId, _ ->
                 if (actionId == EditorInfo.IME_ACTION_SEND) { send(); true } else false
             }
+            // Grab the keyboard only while this field is being used; release it to the system
+            // otherwise so the overlay never blocks typing in other apps.
+            setOnTouchListener { v, _ ->
+                setWindowFocusable(true)
+                v.requestFocus()
+                false
+            }
+            onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
+                if (!hasFocus) setWindowFocusable(false)
+            }
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                 .apply { marginStart = dp(4); marginEnd = dp(4) }
         }
@@ -339,12 +349,10 @@ class AssistantOverlayService : Service() {
         expanded = true
         bubble?.visibility = View.GONE
         panel?.visibility = View.VISIBLE
-        // Make the window focusable so the soft keyboard works for the EditText.
-        params?.let { lp ->
-            lp.flags = lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-            runCatching { windowManager?.updateViewLayout(root, lp) }
-        }
-        inputField?.requestFocus()
+        // Do NOT make the window focusable just because the panel is open — a focusable
+        // TYPE_APPLICATION_OVERLAY becomes the global IME target and blocks the keyboard in every
+        // other app. Focusability is scoped to the input field (see setWindowFocusable), so tapping
+        // the field grabs the keyboard and leaving it releases the keyboard back to the system.
     }
 
     private fun collapse() {
@@ -353,10 +361,19 @@ class AssistantOverlayService : Service() {
         if (listening) voice.stop()
         panel?.visibility = View.GONE
         bubble?.visibility = View.VISIBLE
-        params?.let { lp ->
-            lp.flags = lp.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-            runCatching { windowManager?.updateViewLayout(root, lp) }
+        setWindowFocusable(false)
+    }
+
+    /** Flip the overlay window between focusable (keyboard target) and not, keeping all other flags. */
+    private fun setWindowFocusable(focusable: Boolean) {
+        val lp = params ?: return
+        val was = lp.flags
+        lp.flags = if (focusable) {
+            lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        } else {
+            lp.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
         }
+        if (lp.flags != was) runCatching { windowManager?.updateViewLayout(root, lp) }
     }
 
     /**

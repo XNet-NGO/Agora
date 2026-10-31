@@ -73,11 +73,18 @@ class LiveVoiceStreamer(
                 override fun onMessage(ws: WebSocket, bytes: ByteString) = handleIncoming(bytes.utf8())
 
                 override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                    val body = runCatching { response?.body?.string() }.getOrNull()
+                    Log.e(TAG, "WS onFailure code=${response?.code} msg=${t.message} body=${body?.take(300)}", t)
                     trySend(LiveStreamEvent.Error(t.message ?: "Connection failed")); close()
                 }
 
                 override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+                    Log.w(TAG, "WS onClosed code=$code reason=$reason")
                     trySend(LiveStreamEvent.Disconnected); close()
+                }
+
+                override fun onClosing(ws: WebSocket, code: Int, reason: String) {
+                    Log.w(TAG, "WS onClosing code=$code reason=$reason")
                 }
 
                 private fun handleIncoming(text: String) {
@@ -92,6 +99,9 @@ class LiveVoiceStreamer(
                         if (json.has("goAway")) {
                             Log.w(TAG, "GoAway: ${json.optJSONObject("goAway")?.optString("timeLeft")}")
                             return
+                        }
+                        if (!json.has("serverContent")) {
+                            Log.d(TAG, "server msg: ${text.take(300)}")
                         }
                         // Tool call from the model: execute via the bridge and send responses back.
                         json.optJSONObject("toolCall")?.let { tc ->

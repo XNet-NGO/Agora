@@ -283,9 +283,17 @@ class AssistantOverlayService : Service() {
             }
             // Grab the keyboard only while this field is being used; release it to the system
             // otherwise so the overlay never blocks typing in other apps.
-            setOnTouchListener { v, _ ->
-                setWindowFocusable(true)
-                v.requestFocus()
+            setOnTouchListener { v, event ->
+                if (event.action == MotionEvent.ACTION_UP) {
+                    setWindowFocusable(true)
+                    v.requestFocus()
+                    // Explicitly (re)show the IME; after the window toggles focusable the system
+                    // doesn't always auto-raise the keyboard, which left it unable to refocus.
+                    runCatching {
+                        (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                            .showSoftInput(v, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                    }
+                }
                 false
             }
             onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
@@ -413,7 +421,20 @@ class AssistantOverlayService : Service() {
             val key = container.settingsRepository.resolveActiveKey(config.provider).orEmpty()
             if (key.isBlank()) { responseView?.text = getString(R.string.live_voice_needs_key); return@launch }
             responseView?.text = getString(R.string.live_voice_connecting)
-            controller.start(applicationContext, config, key)
+            val bridge = runCatching {
+                val ctx = com.newoether.agora.viewmodel.GenerationContext(
+                    conversationId = "live-voice",
+                    todoEnabled = container.settingsRepository.todoEnabled.value,
+                    webSearchEnabled = container.settingsRepository.webSearchEnabled.value,
+                    webSearchApiKeys = container.settingsRepository.webSearchApiKeys.value,
+                    accessSavedMemories = container.settingsRepository.accessSavedMemories.value,
+                    accessActiveMemory = container.settingsRepository.accessActiveMemory.value,
+                    accessPastConversations = container.settingsRepository.accessPastConversations.value,
+                    askUserEnabled = false,
+                )
+                container.chatRuntime.generationManager.buildLiveToolBridge(ctx)
+            }.getOrNull()
+            controller.start(applicationContext, config, key, bridge)
             updateLiveButtons()
             observeLiveSession()
         }

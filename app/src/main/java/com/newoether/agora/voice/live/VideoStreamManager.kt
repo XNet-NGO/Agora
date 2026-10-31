@@ -65,6 +65,7 @@ class VideoStreamManager(
     // ── Camera ────────────────────────────────────────────────────────────────
     fun startCamera(front: Boolean) {
         stop()
+        Log.i(TAG, "startCamera front=$front")
         cameraFront = front
         source = LiveVideoSource.CAMERA
         val main = ContextCompat.getMainExecutor(appContext)
@@ -119,6 +120,7 @@ class VideoStreamManager(
         val scale = (TARGET_MAX.toFloat() / maxOf(metrics.widthPixels, metrics.heightPixels)).coerceAtMost(1f)
         val w = (metrics.widthPixels * scale).toInt().coerceAtLeast(16)
         val h = (metrics.heightPixels * scale).toInt().coerceAtLeast(16)
+        Log.i(TAG, "startScreen ${w}x$h dpi=${metrics.densityDpi}")
         val thread = HandlerThread("live-screen").also { it.start(); screenThread = it }
         val handler = Handler(thread.looper).also { screenHandler = it }
         projection.registerCallback(object : MediaProjection.Callback() {
@@ -164,7 +166,10 @@ class VideoStreamManager(
             val baos = ByteArrayOutputStream()
             scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, baos)
             val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
-            if (source != LiveVideoSource.NONE) onFrame(b64)
+            if (source != LiveVideoSource.NONE) {
+                Log.i(TAG, "send $source frame ${scaled.width}x${scaled.height} b64=${b64.length}B")
+                onFrame(b64)
+            }
         } finally {
             encoding = false
         }
